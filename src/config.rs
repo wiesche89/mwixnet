@@ -7,12 +7,12 @@ use std::result::Result;
 
 use grin_core::global::ChainTypes;
 use grin_util::{file, ToHex, ZeroingString};
+use grin_wallet_libwallet::mwixnet::onion as grin_onion;
 use grin_wallet_util::OnionV3Address;
-use rand::{Rng, thread_rng};
+use rand::{thread_rng, Rng};
 use ring::{aead, pbkdf2};
 use serde_derive::{Deserialize, Serialize};
 use thiserror::Error;
-use grin_wallet_libwallet::mwixnet::onion as grin_onion;
 
 use grin_onion::crypto::dalek::DalekPublicKey;
 use grin_onion::crypto::secp::SecretKey;
@@ -285,7 +285,7 @@ pub fn wallet_owner_url(_chain_type: &ChainTypes) -> String {
 pub mod test_util {
 	use std::net::TcpListener;
 
-	use grin_onion::crypto::dalek::DalekPublicKey;
+	use grin_wallet_libwallet::mwixnet::onion::crypto::dalek::DalekPublicKey;
 	use secp256k1zkp::SecretKey;
 
 	use crate::config::ServerConfig;
@@ -319,7 +319,7 @@ mod tests {
 	#[test]
 	fn server_key_encrypt() {
 		let password = ZeroingString::from("password");
-		let server_key = secp::random_secret();
+		let server_key = secp::random_secret(false);
 		let mut enc_key = EncryptedServerKey::from_secret_key(&server_key, &password);
 		let decrypted_key = enc_key.decrypt(&password).unwrap();
 		assert_eq!(server_key, decrypted_key);

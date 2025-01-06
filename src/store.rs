@@ -1,5 +1,5 @@
-use grin_core::core::{Input, Transaction};
 use grin_core::core::hash::Hash;
+use grin_core::core::{Input, Transaction};
 use grin_core::ser::{
 	self, DeserializationMode, ProtocolVersion, Readable, Reader, Writeable, Writer,
 };
@@ -7,10 +7,10 @@ use grin_store::{self as store, Store};
 use grin_util::ToHex;
 use thiserror::Error;
 
-use grin_wallet_libwallet::mwixnet::onion as grin_onion;
 use grin_onion::crypto::secp::{self, Commitment, RangeProof, SecretKey};
 use grin_onion::onion::Onion;
 use grin_onion::util::{read_optional, write_optional};
+use grin_wallet_libwallet::mwixnet::onion as grin_onion;
 
 const DB_NAME: &str = "swap";
 const STORE_SUBPATH: &str = "swaps";
@@ -133,7 +133,7 @@ impl Readable for SwapData {
 		let rangeproof = read_optional(reader)?;
 		let input = Input::read(reader)?;
 		let fee = reader.read_u64()?;
-		let onion = Onion::read(reader)?;
+		let onion = grin_wallet_libwallet::mwixnet::onion::onion::Onion::read(reader)?;
 		let status = SwapStatus::read(reader)?;
 		Ok(SwapData {
 			excess,
@@ -314,8 +314,8 @@ mod tests {
 	use grin_core::global::{self, ChainTypes};
 	use rand::RngCore;
 
-	use grin_onion::crypto::secp;
-	use grin_onion::test_util as onion_test_util;
+	use grin_wallet_libwallet::mwixnet::onion::crypto::secp;
+	use grin_wallet_libwallet::mwixnet::onion::test_util as onion_test_util;
 
 	use crate::store::{StoreError, SwapData, SwapStatus, SwapStore};
 
@@ -328,7 +328,7 @@ mod tests {
 
 	fn rand_swap_with_status(status: SwapStatus) -> SwapData {
 		SwapData {
-			excess: secp::random_secret(),
+			excess: secp::random_secret(false),
 			output_commit: onion_test_util::rand_commit(),
 			rangeproof: Some(onion_test_util::rand_proof()),
 			input: Input::new(OutputFeatures::Plain, onion_test_util::rand_commit()),

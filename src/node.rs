@@ -12,8 +12,8 @@ use grin_util::ToHex;
 use serde_json::json;
 use thiserror::Error;
 
-use grin_wallet_libwallet::mwixnet::onion as grin_onion;
 use grin_onion::crypto::secp::Commitment;
+use grin_wallet_libwallet::mwixnet::onion as grin_onion;
 
 use crate::http;
 
@@ -248,7 +248,7 @@ pub mod mock {
 	use grin_core::core::hash::Hash;
 	use grin_core::core::Transaction;
 
-	use grin_onion::crypto::secp::Commitment;
+	use grin_wallet_libwallet::mwixnet::onion::crypto::secp::Commitment;
 
 	use super::{GrinNode, NodeError};
 

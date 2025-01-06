@@ -11,7 +11,7 @@ use grin_core::global;
 use grin_core::global::ChainTypes;
 use grin_util::{StopState, ZeroingString};
 use grin_wallet_libwallet::mwixnet::onion as grin_onion;
-use rand::{Rng, thread_rng};
+use rand::{thread_rng, Rng};
 use rpassword;
 use tor_rtcompat::PreferredRuntime;
 
@@ -78,7 +78,7 @@ fn real_main() -> Result<(), Box<dyn std::error::Error>> {
 		}
 
 		let server_config = ServerConfig {
-			key: crypto::secp::random_secret(),
+			key: crypto::secp::random_secret(false),
 			interval_s: round_time.unwrap_or(DEFAULT_INTERVAL),
 			addr: bind_addr.unwrap_or("127.0.0.1:3000").parse()?,
 			grin_node_url: match grin_node_url {
@@ -127,8 +127,7 @@ fn real_main() -> Result<(), Box<dyn std::error::Error>> {
 		}
 		let sub_args = args.subcommand_matches("pubkey").unwrap();
 		let server_pubkey = server_config.server_pubkey();
-		if sub_args.is_present("output_file") 
-		{
+		if sub_args.is_present("output_file") {
 			//output server pubkey to file
 			let output_file = sub_args.value_of("output_file").unwrap();
 			std::fs::write(output_file, format!("{}", server_pubkey.to_hex()))?;
@@ -136,7 +135,7 @@ fn real_main() -> Result<(), Box<dyn std::error::Error>> {
 		} else {
 			println!("{}", server_pubkey.to_hex());
 		}
-		return Ok(())
+		return Ok(());
 	}
 
 	// Override grin_node_url, if supplied

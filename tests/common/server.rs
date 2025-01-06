@@ -6,9 +6,9 @@ use grin_core::core::Transaction;
 use tor_rtcompat::PreferredRuntime;
 use x25519_dalek::{PublicKey as xPublicKey, StaticSecret};
 
-use grin_onion::crypto::comsig::ComSignature;
-use grin_onion::crypto::dalek::DalekPublicKey;
-use grin_onion::onion::Onion;
+use grin_wallet_libwallet::mwixnet::onion::crypto::comsig::ComSignature;
+use grin_wallet_libwallet::mwixnet::onion::crypto::dalek::DalekPublicKey;
+use grin_wallet_libwallet::mwixnet::onion::onion::Onion;
 use mwixnet::mix_client::MixClientImpl;
 use mwixnet::tor::TorService;
 use mwixnet::{tor, SwapError, SwapServer, SwapStore};
@@ -183,10 +183,11 @@ impl Servers {
 		num_mixers: usize,
 	) -> Servers {
 		// Pre-generate all server keys
-		let server_keys: Vec<SecretKey> =
-			iter::repeat_with(|| grin_onion::crypto::secp::random_secret())
-				.take(num_mixers + 1)
-				.collect();
+		let server_keys: Vec<SecretKey> = iter::repeat_with(|| {
+			grin_wallet_libwallet::mwixnet::onion::crypto::secp::random_secret(false)
+		})
+		.take(num_mixers + 1)
+		.collect();
 
 		// Setup mock tor network
 		let tor_runtime = PreferredRuntime::current().unwrap();

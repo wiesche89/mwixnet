@@ -4,8 +4,8 @@ use grin_core::core::{
 	FeeFields, Input, Inputs, KernelFeatures, Output, Transaction, TransactionBody, TxKernel,
 };
 use grin_keychain::BlindingFactor;
-use grin_wallet_libwallet::mwixnet::onion as grin_onion;
 use grin_onion::crypto::secp;
+use grin_wallet_libwallet::mwixnet::onion as grin_onion;
 use secp256k1zkp::{ContextFlag, Secp256k1, SecretKey};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -143,7 +143,7 @@ async fn async_add_kernel_and_collect_fees(
 	}
 
 	// generate random transaction offset
-	let our_offset = secp::random_secret();
+	let our_offset = secp::random_secret(false);
 	let txn_offset = secp
 		.blind_sum(vec![prev_offset.clone(), our_offset.clone()], Vec::new())
 		.map_err(TxError::OffsetError)?;

@@ -17,9 +17,9 @@ use serde_derive::{Deserialize, Serialize};
 use serde_json::json;
 use x25519_dalek::PublicKey as xPublicKey;
 
-use grin_onion::crypto::comsig::ComSignature;
-use grin_onion::onion::Onion;
-use grin_onion::Hop;
+use grin_wallet_libwallet::mwixnet::onion::crypto::comsig::ComSignature;
+use grin_wallet_libwallet::mwixnet::onion::onion::Onion;
+use grin_wallet_libwallet::mwixnet::onion::Hop;
 use mwixnet::http;
 use mwixnet::wallet::HttpWallet;
 use secp256k1zkp::pedersen::Commitment;
@@ -344,8 +344,10 @@ impl IntegrationGrinWallet {
 			})
 			.collect();
 
-		let onion = grin_onion::create_onion(&commitment, &hops).unwrap();
-		let comsig = ComSignature::sign(amount, &input_blind, &onion.serialize().unwrap()).unwrap();
+		let onion =
+			grin_wallet_libwallet::mwixnet::onion::create_onion(&commitment, &hops, false).unwrap();
+		let comsig =
+			ComSignature::sign(amount, &input_blind, &onion.serialize().unwrap(), false).unwrap();
 
 		Ok((onion, comsig))
 	}

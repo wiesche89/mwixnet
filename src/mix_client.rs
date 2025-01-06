@@ -10,9 +10,9 @@ use serde_json::json;
 use thiserror::Error;
 use tor_rtcompat::Runtime;
 
-use grin_wallet_libwallet::mwixnet::onion as grin_onion;
 use grin_onion::crypto::dalek::{self, DalekPublicKey};
 use grin_onion::onion::Onion;
+use grin_wallet_libwallet::mwixnet::onion as grin_onion;
 
 use crate::config::ServerConfig;
 use crate::servers::mix_rpc::{MixReq, MixResp};
@@ -112,7 +112,7 @@ pub mod mock {
 
 	use async_trait::async_trait;
 
-	use grin_onion::onion::Onion;
+	use grin_wallet_libwallet::mwixnet::onion::onion::Onion;
 
 	use crate::servers::mix_rpc::MixResp;
 
@@ -155,9 +155,9 @@ pub mod test_util {
 	use grin_core::ser;
 	use grin_core::ser::ProtocolVersion;
 
-	use grin_onion::crypto::dalek::{self, DalekPublicKey};
-	use grin_onion::crypto::secp::SecretKey;
-	use grin_onion::onion::Onion;
+	use grin_wallet_libwallet::mwixnet::onion::crypto::dalek::{self, DalekPublicKey};
+	use grin_wallet_libwallet::mwixnet::onion::crypto::secp::SecretKey;
+	use grin_wallet_libwallet::mwixnet::onion::onion::Onion;
 
 	use crate::servers::mix::MixServer;
 	use crate::servers::mix_rpc::MixResp;

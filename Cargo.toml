@@ -65,9 +65,10 @@ grin_p2p = { git = "https://github.com/mimblewimble/grin", branch = "master" }
 grin_servers = { git = "https://github.com/mimblewimble/grin", branch = "master" }
 grin_store = { git = "https://github.com/mimblewimble/grin", branch = "master" }
 grin_util = { git = "https://github.com/mimblewimble/grin", branch = "master" }
-grin_wallet_api = { git = "https://github.com/mimblewimble/grin-wallet", branch = "master" }
-grin_wallet_config = { git = "https://github.com/mimblewimble/grin-wallet", branch = "master" }
-grin_wallet_controller = { git = "https://github.com/mimblewimble/grin-wallet", branch = "master" }
-grin_wallet_impls = { git = "https://github.com/mimblewimble/grin-wallet", branch = "master" }
-grin_wallet_libwallet = { git = "https://github.com/mimblewimble/grin-wallet", branch = "master" }
-grin_wallet_util = { git = "https://github.com/mimblewimble/grin-wallet", branch = "master" }
+
+grin_wallet_api = { git = "https://github.com/wiesche89/grin-wallet.git", branch = "master" }
+grin_wallet_config = { git = "https://github.com/wiesche89/grin-wallet.git", branch = "master" }
+grin_wallet_controller = { git = "https://github.com/wiesche89/grin-wallet.git", branch = "master" }
+grin_wallet_impls = { git = "https://github.com/wiesche89/grin-wallet.git", branch = "master" }
+grin_wallet_libwallet = { git = "https://github.com/wiesche89/grin-wallet.git", branch = "master" }
+grin_wallet_util = { git = "https://github.com/wiesche89/grin-wallet.git", branch = "master" }

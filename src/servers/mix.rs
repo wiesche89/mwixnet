@@ -10,9 +10,9 @@ use grin_core::ser::ProtocolVersion;
 use itertools::Itertools;
 use thiserror::Error;
 
-use grin_wallet_libwallet::mwixnet::onion as grin_onion;
 use grin_onion::crypto::dalek::{self, DalekSignature};
 use grin_onion::onion::{Onion, OnionError, PeeledOnion};
+use grin_wallet_libwallet::mwixnet::onion as grin_onion;
 use secp256k1zkp::key::ZERO_KEY;
 use secp256k1zkp::Secp256k1;
 
@@ -303,12 +303,12 @@ impl MixServer for MixServerImpl {
 mod test_util {
 	use std::sync::Arc;
 
-	use grin_onion::crypto::dalek::DalekPublicKey;
+	use grin_wallet_libwallet::mwixnet::onion::crypto::dalek::DalekPublicKey;
 	use secp256k1zkp::SecretKey;
 
 	use crate::config;
-	use crate::mix_client::MixClient;
 	use crate::mix_client::test_util::DirectMixClient;
+	use crate::mix_client::MixClient;
 	use crate::node::mock::MockGrinNode;
 	use crate::servers::mix::MixServerImpl;
 	use crate::wallet::mock::MockWallet;
@@ -349,10 +349,10 @@ mod tests {
 
 	use ::function_name::named;
 
-	use grin_onion::{create_onion, Hop, new_hop};
-	use grin_onion::crypto::dalek::DalekPublicKey;
-	use grin_onion::crypto::secp::{self, Commitment};
-	use grin_onion::test_util as onion_test_util;
+	use grin_wallet_libwallet::mwixnet::onion::crypto::dalek::DalekPublicKey;
+	use grin_wallet_libwallet::mwixnet::onion::crypto::secp::{self, Commitment};
+	use grin_wallet_libwallet::mwixnet::onion::test_util as onion_test_util;
+	use grin_wallet_libwallet::mwixnet::onion::{create_onion, new_hop, Hop};
 	use secp256k1zkp::pedersen::RangeProof;
 	use secp256k1zkp::SecretKey;
 
@@ -380,7 +380,7 @@ mod tests {
 	impl ServerVars {
 		fn new(fee: u32) -> Self {
 			let (sk, pk) = onion_test_util::rand_keypair();
-			let excess = secp::random_secret();
+			let excess = secp::random_secret(false);
 			ServerVars {
 				fee,
 				sk,
@@ -407,7 +407,7 @@ mod tests {
 
 		// Setup Input(s)
 		let input1_value: u64 = 200_000_000;
-		let input1_blind = secp::random_secret();
+		let input1_blind = secp::random_secret(false);
 		let input1_commit = secp::commit(input1_value, &input1_blind)?;
 		let input_commits = vec![&input1_commit];
 
@@ -449,6 +449,7 @@ mod tests {
 				mix1_vars.build_hop(None),
 				mix2_vars.build_hop(Some(proof)),
 			],
+			false,
 		)?;
 
 		// Simulate the swap server peeling the onion and then calling mix1

@@ -6,9 +6,9 @@ use jsonrpc_derive::rpc;
 use jsonrpc_http_server::{DomainsValidation, ServerBuilder};
 use serde::{Deserialize, Serialize};
 
-use grin_wallet_libwallet::mwixnet::onion as grin_onion;
 use grin_onion::crypto::comsig::{self, ComSignature};
 use grin_onion::onion::Onion;
+use grin_wallet_libwallet::mwixnet::onion as grin_onion;
 
 use crate::config::ServerConfig;
 use crate::mix_client::MixClient;
@@ -123,13 +123,13 @@ mod tests {
 	use hyper::{Body, Client, Request, Response};
 	use tokio::sync::Mutex;
 
-	use grin_onion::create_onion;
-	use grin_onion::crypto::comsig::ComSignature;
-	use grin_onion::crypto::secp;
+	use grin_wallet_libwallet::mwixnet::onion::create_onion;
+	use grin_wallet_libwallet::mwixnet::onion::crypto::comsig::ComSignature;
+	use grin_wallet_libwallet::mwixnet::onion::crypto::secp;
 
 	use crate::config::ServerConfig;
-	use crate::servers::swap::{SwapError, SwapServer};
 	use crate::servers::swap::mock::MockSwapServer;
+	use crate::servers::swap::{SwapError, SwapServer};
 	use crate::servers::swap_rpc::{RPCSwapServer, SwapReq};
 
 	async fn body_to_string(req: Response<Body>) -> String {
@@ -144,7 +144,7 @@ mod tests {
 		runtime_handle: &tokio::runtime::Handle,
 	) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
 		let server_config = ServerConfig {
-			key: secp::random_secret(),
+			key: secp::random_secret(false),
 			interval_s: 1,
 			addr: TcpListener::bind("127.0.0.1:0")?.local_addr()?,
 			grin_node_url: "127.0.0.1:3413".parse()?,
@@ -191,9 +191,14 @@ mod tests {
 		let rt = tokio::runtime::Builder::new_multi_thread()
 			.enable_all()
 			.build()?;
-		let commitment = secp::commit(1234, &secp::random_secret())?;
-		let onion = create_onion(&commitment, &vec![])?;
-		let comsig = ComSignature::sign(1234, &secp::random_secret(), &onion.serialize()?)?;
+		let commitment = secp::commit(1234, &secp::random_secret(false))?;
+		let onion = create_onion(&commitment, &vec![], false)?;
+		let comsig = ComSignature::sign(
+			1234,
+			&secp::random_secret(false),
+			&onion.serialize()?,
+			false,
+		)?;
 		let swap = SwapReq {
 			onion: onion.clone(),
 			comsig,
@@ -239,9 +244,14 @@ mod tests {
 			.enable_all()
 			.build()?;
 
-		let commitment = secp::commit(1234, &secp::random_secret())?;
-		let onion = create_onion(&commitment, &vec![])?;
-		let comsig = ComSignature::sign(1234, &secp::random_secret(), &onion.serialize()?)?;
+		let commitment = secp::commit(1234, &secp::random_secret(false))?;
+		let onion = create_onion(&commitment, &vec![], false)?;
+		let comsig = ComSignature::sign(
+			1234,
+			&secp::random_secret(false),
+			&onion.serialize()?,
+			false,
+		)?;
 		let swap = SwapReq {
 			onion: onion.clone(),
 			comsig,

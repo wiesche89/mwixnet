@@ -2,13 +2,13 @@ use std::sync::Arc;
 
 use futures::FutureExt;
 use jsonrpc_derive::rpc;
-use jsonrpc_http_server::{DomainsValidation, ServerBuilder};
 use jsonrpc_http_server::jsonrpc_core::{self, BoxFuture, IoHandler};
+use jsonrpc_http_server::{DomainsValidation, ServerBuilder};
 use serde::{Deserialize, Serialize};
 
-use grin_wallet_libwallet::mwixnet::onion as grin_onion;
-use grin_onion::crypto::dalek::{self, DalekSignature};
+use grin_onion::crypto::dalek::DalekSignature;
 use grin_onion::onion::Onion;
+use grin_wallet_libwallet::mwixnet::onion as grin_onion;
 
 use crate::config::ServerConfig;
 use crate::mix_client::MixClient;
@@ -20,7 +20,7 @@ use crate::wallet::Wallet;
 #[derive(Serialize, Deserialize)]
 pub struct MixReq {
 	onions: Vec<Onion>,
-	#[serde(with = "dalek::dalek_sig_serde")]
+	#[serde(with = "grin_onion::crypto::dalek::dalek_sig_serde")]
 	sig: DalekSignature,
 }
 
