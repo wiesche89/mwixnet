@@ -72,6 +72,8 @@ fn integration_test() -> Result<(), Box<dyn std::error::Error>> {
 		&node1,
 		2usize,
 	));
+	assert_eq!(servers.mixers.len(), 2);
+	assert_eq!(servers.get_server_keys().len(), 3);
 
 	rt.block_on(async {
 		// Setup wallet to use with miner
@@ -145,6 +147,8 @@ fn integration_test() -> Result<(), Box<dyn std::error::Error>> {
 			.await
 			.unwrap()
 			.unwrap();
+		assert_eq!(tx.outputs().len(), 4);
+		assert_eq!(node1_server.tx_pool.read().total_size(), 1);
 		miner
 			.async_mine_next_block(&mining_wallet, &vec![tx.as_ref().clone()])
 			.await;
@@ -193,6 +197,94 @@ fn integration_test() -> Result<(), Box<dyn std::error::Error>> {
 			.unwrap();
 		assert_eq!(user1_wallet_info.amount_currently_spendable, 9_850_000_000);
 		assert_eq!(user1_wallet_info.amount_locked, 0);
+		if std::env::var_os("MWIXNET_DISCOVERY_E2E").is_none() {
+			return;
+		}
+
+		let node_client = node1.lock().to_client();
+		let mut announced = false;
+		for _ in 0..150 {
+			if let Ok(page) = node_client
+				.async_get_mwixnet_routes(None, mwixnet_protocol::P2P_BATCH_MAX_ROUTES as u16)
+				.await
+			{
+				if !page.items.is_empty() {
+					announced = true;
+					break;
+				}
+			}
+			tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+		}
+		assert!(announced, "MWixnet route was not announced to the node");
+
+		let route = {
+			let mut route = None;
+			for _ in 0..30 {
+				if let Ok(routes) = user2_wallet.lock().async_get_mwixnet_routes(true).await {
+					route = routes.into_iter().next();
+					if route.is_some() {
+						break;
+					}
+				}
+				tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+			}
+			route.expect("MWixnet route was not discovered")
+		};
+		assert_eq!(route.hop_count, 3);
+		let user2_km = user2_wallet.lock().keychain_mask();
+		let (_, outputs) = user2_wallet
+			.lock()
+			.owner_api()
+			.retrieve_outputs(user2_km.as_ref(), false, true, None)
+			.unwrap();
+		let output = outputs
+			.into_iter()
+			.find(|output| output.output.status == grin_wallet_libwallet::OutputStatus::Unspent)
+			.unwrap();
+		let creation = {
+			let mut creation = None;
+			for _ in 0..150 {
+				if let Ok(request) = user2_wallet
+					.lock()
+					.async_create_mwixnet_route_req(&output.commit, route.route_id)
+					.await
+				{
+					creation = Some(request);
+					break;
+				}
+				tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+			}
+			creation.expect("MWixnet route did not become usable")
+		};
+		let submission = servers
+			.swapper
+			.async_route_swap(&creation.request)
+			.await
+			.unwrap();
+		assert_eq!(
+			submission.status,
+			grin_wallet_libwallet::mwixnet::SwapSubmissionStatus::Accepted
+		);
+		let tx = servers
+			.swapper
+			.async_execute_round()
+			.await
+			.unwrap()
+			.unwrap();
+		miner
+			.async_mine_next_block(&mining_wallet, &vec![tx.as_ref().clone()])
+			.await;
+		user2_wallet.lock().async_scan().await.unwrap();
+		let user2_wallet_info = user2_wallet
+			.lock()
+			.async_retrieve_summary_info()
+			.await
+			.unwrap();
+		assert_eq!(
+			user2_wallet_info.amount_currently_spendable,
+			20_000_000_000 - route.total_fee
+		);
+		assert_eq!(user2_wallet_info.amount_locked, 0);
 	});
 
 	servers.stop_all();

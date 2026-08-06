@@ -4,7 +4,6 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use futures::stream::{self, StreamExt};
 use grin_core::core::{Output, OutputFeatures, TransactionBody};
-use grin_core::global::DEFAULT_ACCEPT_FEE_BASE;
 use grin_core::ser;
 use grin_core::ser::ProtocolVersion;
 use itertools::Itertools;
@@ -19,7 +18,7 @@ use secp256k1zkp::Secp256k1;
 use crate::config::ServerConfig;
 use crate::mix_client::MixClient;
 use crate::node::{self, GrinNode};
-use crate::servers::mix_rpc::MixResp;
+use crate::servers::mix_rpc::{MixResp, RouteMixReq};
 use crate::tx::{self, TxComponents};
 use crate::wallet::Wallet;
 
@@ -38,6 +37,8 @@ fn filter_by_indices<'a, T>(
 /// Mixer error types
 #[derive(Error, Debug)]
 pub enum MixError {
+	#[error("{0}")]
+	Protocol(mwixnet_protocol::ProtocolRpcError),
 	#[error("Invalid number of payloads provided")]
 	InvalidPayloadLength,
 	#[error("Signature is invalid")]
@@ -73,6 +74,15 @@ pub trait MixServer: Send + Sync {
 		onions: &Vec<Onion>,
 		sig: &DalekSignature,
 	) -> Result<MixResp, MixError>;
+
+	async fn route_mix(
+		&self,
+		_request: &RouteMixReq,
+		_predecessor: &grin_onion::crypto::dalek::DalekPublicKey,
+		_next_server: Option<Arc<dyn MixClient>>,
+	) -> Result<MixResp, MixError> {
+		Err(MixError::InvalidSignature)
+	}
 }
 
 /// The standard MWixnet "Mixer" implementation
@@ -102,23 +112,20 @@ impl MixServerImpl {
 		}
 	}
 
-	/// The fee base to use. For now, just using the default.
 	fn get_fee_base(&self) -> u64 {
-		DEFAULT_ACCEPT_FEE_BASE
+		self.server_config.accept_fee_base
 	}
 
 	/// Minimum fee to perform a mix.
 	/// Requires enough fee for the mixer's kernel.
-	fn get_minimum_mix_fee(&self) -> u64 {
+	pub(crate) fn get_minimum_mix_fee(&self) -> u64 {
 		TransactionBody::weight_by_iok(0, 0, 1) * self.get_fee_base()
 	}
 
-	fn peel_onion(&self, onion: &Onion) -> Result<PeeledOnion, MixError> {
+	fn peel_onion(&self, onion: &Onion, has_next: bool) -> Result<PeeledOnion, MixError> {
 		// Verify that more than 1 payload exists when there's a next server,
 		// or that exactly 1 payload exists when this is the final server
-		if self.server_config.next_server.is_some() && onion.enc_payloads.len() <= 1
-			|| self.server_config.next_server.is_none() && onion.enc_payloads.len() != 1
-		{
+		if has_next && onion.enc_payloads.len() <= 1 || !has_next && onion.enc_payloads.len() != 1 {
 			return Err(MixError::InvalidPayloadLength);
 		}
 
@@ -152,6 +159,7 @@ impl MixServerImpl {
 	async fn async_build_final_outputs(
 		&self,
 		peeled: &Vec<(usize, PeeledOnion)>,
+		route: Option<(mwixnet_protocol::Hash, u64, mwixnet_protocol::Hash)>,
 	) -> Result<MixResp, MixError> {
 		// Filter out commitments that already exist in the UTXO set
 		let filtered: Vec<&(usize, PeeledOnion)> = stream::iter(peeled.iter())
@@ -198,6 +206,9 @@ impl MixServerImpl {
 		let indices = filtered.iter().map(|(i, _)| *i).collect();
 
 		Ok(MixResp {
+			version: route.map(|_| mwixnet_protocol::MWIXNET_PROTOCOL_VERSION),
+			msg_type: route.map(|_| mwixnet_protocol::MwixnetType::MixResp),
+			batch_id: route.map(|(_, _, batch_id)| batch_id),
 			indices,
 			components,
 		})
@@ -206,6 +217,8 @@ impl MixServerImpl {
 	async fn call_next_mixer(
 		&self,
 		peeled: &Vec<(usize, PeeledOnion)>,
+		route: Option<(mwixnet_protocol::Hash, u64, mwixnet_protocol::Hash)>,
+		next_server: &dyn MixClient,
 	) -> Result<MixResp, MixError> {
 		// Sort by commitment
 		let mut onions_with_index = peeled.clone();
@@ -217,13 +230,31 @@ impl MixServerImpl {
 			.iter()
 			.map(|(_, p)| p.onion.clone())
 			.collect();
-		let mixed = self
-			.mix_client
-			.as_ref()
-			.unwrap()
-			.mix_outputs(&onions)
-			.await
-			.map_err(MixError::Client)?;
+		let mixed = match route {
+			Some((route_id, manifest_sequence, batch_id)) => next_server
+				.mix_route(route_id, manifest_sequence, batch_id, &onions)
+				.await
+				.map_err(MixError::Client)?,
+			None => next_server
+				.mix_outputs(&onions)
+				.await
+				.map_err(MixError::Client)?,
+		};
+		if let Some((_, _, batch_id)) = route {
+			if mixed.version != Some(mwixnet_protocol::MWIXNET_PROTOCOL_VERSION)
+				|| mixed.msg_type != Some(mwixnet_protocol::MwixnetType::MixResp)
+				|| mixed.batch_id != Some(batch_id)
+				|| mixed.indices.windows(2).any(|pair| pair[0] >= pair[1])
+				|| mixed.indices.iter().any(|index| *index >= onions.len())
+				|| mixed.components.outputs.len() != mixed.indices.len()
+				|| (mixed.indices.is_empty() && !mixed.components.kernels.is_empty())
+			{
+				return Err(MixError::Protocol(mwixnet_protocol::ProtocolRpcError::new(
+					mwixnet_protocol::ProtocolErrorCode::InvalidMwixnetMessage,
+					"invalid route mix response",
+				)));
+			}
+		}
 
 		// Remove filtered entries
 		let kept_next_indices = HashSet::<_>::from_iter(mixed.indices.clone());
@@ -253,9 +284,57 @@ impl MixServerImpl {
 		.map_err(MixError::TxError)?;
 
 		Ok(MixResp {
+			version: route.map(|_| mwixnet_protocol::MWIXNET_PROTOCOL_VERSION),
+			msg_type: route.map(|_| mwixnet_protocol::MwixnetType::MixResp),
+			batch_id: route.map(|(_, _, batch_id)| batch_id),
 			indices,
 			components,
 		})
+	}
+
+	async fn process_onions(
+		&self,
+		onions: &Vec<Onion>,
+		route: Option<(mwixnet_protocol::Hash, u64, mwixnet_protocol::Hash)>,
+		next_server: Option<Arc<dyn MixClient>>,
+	) -> Result<MixResp, MixError> {
+		let has_next = next_server.is_some();
+		let mut peeled: Vec<(usize, PeeledOnion)> = onions
+			.iter()
+			.enumerate()
+			.filter_map(|(i, onion)| match self.peel_onion(onion, has_next) {
+				Ok(peeled) => Some((i, peeled)),
+				Err(error) => {
+					println!("Error peeling onion: {:?}", error);
+					None
+				}
+			})
+			.collect();
+		peeled.sort_by_key(|(_, onion)| onion.onion.commit);
+		peeled.dedup_by_key(|(_, onion)| onion.onion.commit);
+		peeled.sort_by_key(|(index, _)| *index);
+		if peeled.is_empty() {
+			return match route {
+				Some((_, _, batch_id)) => Ok(MixResp {
+					version: Some(mwixnet_protocol::MWIXNET_PROTOCOL_VERSION),
+					msg_type: Some(mwixnet_protocol::MwixnetType::MixResp),
+					batch_id: Some(batch_id),
+					indices: Vec::new(),
+					components: TxComponents {
+						offset: ZERO_KEY,
+						kernels: Vec::new(),
+						outputs: Vec::new(),
+					},
+				}),
+				None => Err(MixError::NoValidOutputs),
+			};
+		}
+		if let Some(next_server) = next_server {
+			self.call_next_mixer(&peeled, route, next_server.as_ref())
+				.await
+		} else {
+			self.async_build_final_outputs(&peeled, route).await
+		}
 	}
 }
 
@@ -274,33 +353,30 @@ impl MixServer for MixServerImpl {
 		)
 		.map_err(|_| MixError::InvalidSignature)?;
 
-		// Peel onions and filter
-		let mut peeled: Vec<(usize, PeeledOnion)> = onions
-			.iter()
-			.enumerate()
-			.filter_map(|(i, o)| match self.peel_onion(&o) {
-				Ok(p) => Some((i, p)),
-				Err(e) => {
-					println!("Error peeling onion: {:?}", e);
-					None
-				}
-			})
-			.collect();
+		self.process_onions(onions, None, self.mix_client.clone())
+			.await
+	}
 
-		// Remove duplicate commitments
-		peeled.sort_by_key(|(_, o)| o.onion.commit);
-		peeled.dedup_by_key(|(_, o)| o.onion.commit);
-		peeled.sort_by_key(|(i, _)| *i);
-
-		if peeled.is_empty() {
-			return Err(MixError::NoValidOutputs);
-		}
-
-		if self.server_config.next_server.is_some() {
-			self.call_next_mixer(&peeled).await
-		} else {
-			self.async_build_final_outputs(&peeled).await
-		}
+	async fn route_mix(
+		&self,
+		request: &RouteMixReq,
+		predecessor: &grin_onion::crypto::dalek::DalekPublicKey,
+		next_server: Option<Arc<dyn MixClient>>,
+	) -> Result<MixResp, MixError> {
+		request
+			.sig
+			.verify(predecessor, &request.hash().0)
+			.map_err(|_| MixError::InvalidSignature)?;
+		self.process_onions(
+			&request.onions,
+			Some((
+				request.route_id,
+				request.manifest_sequence,
+				request.batch_id,
+			)),
+			next_server,
+		)
+		.await
 	}
 }
 

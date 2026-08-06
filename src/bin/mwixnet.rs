@@ -9,7 +9,8 @@ use std::time::Duration;
 use clap::App;
 use grin_core::global;
 use grin_core::global::ChainTypes;
-use grin_util::{StopState, ZeroingString};
+use grin_util::{from_hex, StopState, ToHex, ZeroingString};
+use rand::seq::SliceRandom;
 use rand::{thread_rng, Rng};
 use rpassword;
 use tor_rtcompat::PreferredRuntime;
@@ -18,12 +19,12 @@ use grin_onion::crypto;
 use grin_onion::crypto::dalek::DalekPublicKey;
 use grin_wallet_libwallet::mwixnet::onion as grin_onion;
 use mwixnet::config::{self, ServerConfig};
-use mwixnet::mix_client::{MixClient, MixClientImpl};
+use mwixnet::mix_client::{MixClient, MixClientError, MixClientFactory, MixClientImpl};
 use mwixnet::node::GrinNode;
 use mwixnet::node::HttpGrinNode;
 use mwixnet::servers;
 use mwixnet::store::StoreError;
-use mwixnet::store::SwapStore;
+use mwixnet::store::{RouteStore, SwapStore};
 use mwixnet::tor;
 use mwixnet::wallet::{HttpWallet, Wallet};
 
@@ -146,8 +147,13 @@ fn real_main() -> Result<(), Box<dyn std::error::Error>> {
 					.map(|p| p.to_owned()),
 			},
 			collect_fees: !no_fee_collection,
+			accept_fee_base: grin_core::global::DEFAULT_ACCEPT_FEE_BASE,
+			mixer: prev_server.is_some(),
 			prev_server,
 			next_server,
+			route_mixers: Vec::new(),
+			discover_mixers: false,
+			target_route_hops: 2,
 		};
 
 		let password = server_password(server_pass_file, true)?;
@@ -258,6 +264,50 @@ fn real_main() -> Result<(), Box<dyn std::error::Error>> {
 		return Err(e.into());
 	};
 
+	let db_root = config_path
+		.parent()
+		.ok_or(StoreError::OpenError(grin_store::lmdb::Error::FileErr(
+			"db_root path error".to_string(),
+		)))?
+		.join("db")
+		.to_str()
+		.ok_or(StoreError::OpenError(grin_store::lmdb::Error::FileErr(
+			"db_root path error".to_string(),
+		)))?
+		.to_owned();
+	let route_store = RouteStore::new(&db_root)?;
+
+	if let ("revoke-route", Some(sub_args)) = args.subcommand() {
+		let bytes = from_hex(sub_args.value_of("route_id").unwrap())?;
+		let route_id = mwixnet_protocol::Hash(
+			bytes
+				.as_slice()
+				.try_into()
+				.map_err(|_| "route_id must contain 32 bytes")?,
+		);
+		let manifest_sequence = sub_args
+			.value_of("manifest_sequence")
+			.unwrap()
+			.parse::<u64>()?;
+		let role = if server_config.mixer || server_config.prev_server.is_some() {
+			mwixnet_protocol::RouteRole::Mixer
+		} else {
+			mwixnet_protocol::RouteRole::Swap
+		};
+		let routes = servers::route::RouteService::new(server_config, route_store, role, 0);
+		let revocation =
+			rt_handle.block_on(routes.create_revocation(route_id, manifest_sequence))?;
+		let item = mwixnet_protocol::RouteRelayItem::Revocation(revocation);
+		rt_handle.block_on(node.async_submit_mwixnet_route(item.clone()))?;
+		rt_handle.block_on(routes.relay_submitted(&item))?;
+		println!(
+			"MWixnet route {} manifest {} revoked",
+			route_id.0.to_hex(),
+			manifest_sequence
+		);
+		return Ok(());
+	}
+
 	// Open wallet when collecting excess hop fees.
 	let wallet: Option<Arc<dyn Wallet>> = if server_config.collect_fees {
 		let wallet_pass = prompt_wallet_password(&args.value_of("wallet_pass"));
@@ -281,17 +331,32 @@ fn real_main() -> Result<(), Box<dyn std::error::Error>> {
 	let tor_runtime = rt_handle.block_on(async { PreferredRuntime::current() })?;
 	tor_log_ratelim::install_runtime(tor_runtime.clone())?;
 
-	let tor_data_dir = config::get_grin_path(&chain_type)
+	let data_dir = config_path
+		.parent()
+		.ok_or("Invalid MWixnet data directory")?
 		.to_str()
-		.ok_or("Invalid Tor data directory")?
+		.ok_or("Invalid MWixnet data directory")?
 		.to_owned();
 	let tor_instance = rt_handle.block_on(tor::async_init_tor(
 		tor_runtime.clone(),
-		&tor_data_dir,
+		&data_dir,
 		&server_config,
 	))?;
 	let tor_instance = Arc::new(grin_util::Mutex::new(tor_instance));
 	let tor_clone = tor_instance.clone();
+	let client_factory: MixClientFactory = Arc::new({
+		let config = server_config.clone();
+		let tor = tor_instance.clone();
+		move |identity| {
+			let key =
+				DalekPublicKey::from_hex(&identity.0.to_hex()).map_err(MixClientError::Dalek)?;
+			Ok(Arc::new(MixClientImpl::new(
+				config.clone(),
+				tor.clone(),
+				key,
+			)))
+		}
+	});
 
 	let stop_state = Arc::new(StopState::new());
 	let stop_state_clone = stop_state.clone();
@@ -306,7 +371,70 @@ fn real_main() -> Result<(), Box<dyn std::error::Error>> {
 		stop_state_clone.stop();
 	});
 
-	let next_mixer: Option<Arc<dyn MixClient>> = server_config.next_server.clone().map(|pk| {
+	let route_identities = if !server_config.route_mixers.is_empty() {
+		server_config
+			.route_mixers
+			.iter()
+			.map(|identity| DalekPublicKey::from_hex(&identity.0.to_hex()))
+			.collect::<Result<Vec<_>, _>>()?
+	} else if let Some(next_server) = server_config.next_server.clone() {
+		vec![next_server]
+	} else if server_config.discover_mixers
+		&& !server_config.mixer
+		&& server_config.prev_server.is_none()
+	{
+		let mut cursor = None;
+		let mut identities = Vec::new();
+		loop {
+			let page = rt_handle.block_on(node.async_get_mwixnet_offers(
+				cursor,
+				mwixnet_protocol::P2P_OFFER_BATCH_MAX_ITEMS as u16,
+			))?;
+			for item in page.items {
+				if let mwixnet_protocol::MwixnetOffer::Mixer(offer) = item.offer {
+					if offer.identity_public_key != server_config.mwixnet_identity()
+						&& offer.capacity > 0
+					{
+						identities.push(offer.identity_public_key);
+					}
+				}
+			}
+			if page.next_cursor.is_none() || page.next_cursor == cursor {
+				break;
+			}
+			cursor = page.next_cursor;
+		}
+		identities.sort_by_key(|identity| identity.0);
+		identities.dedup();
+		identities.shuffle(&mut thread_rng());
+		identities.truncate(1);
+		if !identities.is_empty() {
+			println!("Discovered {} MWixnet mixer(s)", identities.len());
+		}
+		identities
+			.into_iter()
+			.map(|identity| DalekPublicKey::from_hex(&identity.0.to_hex()))
+			.collect::<Result<Vec<_>, _>>()?
+	} else {
+		Vec::new()
+	};
+	let route_clients = route_identities
+		.iter()
+		.cloned()
+		.map(|pk| {
+			Arc::new(MixClientImpl::new(
+				server_config.clone(),
+				tor_instance.clone(),
+				pk,
+			)) as Arc<dyn MixClient>
+		})
+		.collect::<Vec<_>>();
+	let route_public_identities = route_identities
+		.iter()
+		.map(|identity| mwixnet_protocol::PublicKey(identity.as_ref().to_bytes()))
+		.collect::<Vec<_>>();
+	let next_identity = route_identities.first().cloned();
+	let next_mixer: Option<Arc<dyn MixClient>> = next_identity.map(|pk| {
 		let client: Arc<dyn MixClient> = Arc::new(MixClientImpl::new(
 			server_config.clone(),
 			tor_instance.clone(),
@@ -315,7 +443,7 @@ fn real_main() -> Result<(), Box<dyn std::error::Error>> {
 		client
 	});
 
-	if server_config.prev_server.is_some() {
+	if server_config.mixer || server_config.prev_server.is_some() {
 		// Start the JSON-RPC HTTP 'mix' server
 		println!(
 			"Starting MIX server\nEd25519 identity key: {}\nX25519 onion key: {}",
@@ -327,8 +455,10 @@ fn real_main() -> Result<(), Box<dyn std::error::Error>> {
 			&rt_handle,
 			server_config,
 			next_mixer,
+			client_factory,
 			wallet,
 			Arc::new(node),
+			route_store,
 		)?;
 
 		let close_handle = http_server.close_handle();
@@ -351,14 +481,7 @@ fn real_main() -> Result<(), Box<dyn std::error::Error>> {
 		);
 
 		// Open SwapStore
-		let store = SwapStore::new(
-			config::get_grin_path(&chain_type)
-				.join("db")
-				.to_str()
-				.ok_or(StoreError::OpenError(grin_store::lmdb::Error::FileErr(
-					"db_root path error".to_string(),
-				)))?,
-		)?;
+		let store = SwapStore::new(&db_root)?;
 
 		// Start the mwixnet JSON-RPC HTTP 'swap' server
 		let (swap_server, http_server) = servers::swap_rpc::listen(
@@ -368,6 +491,10 @@ fn real_main() -> Result<(), Box<dyn std::error::Error>> {
 			wallet,
 			Arc::new(node),
 			store,
+			route_store,
+			route_clients,
+			route_public_identities,
+			client_factory,
 		)?;
 
 		let close_handle = http_server.close_handle();

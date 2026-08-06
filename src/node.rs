@@ -39,6 +39,40 @@ pub trait GrinNode: Send + Sync {
 		min_height: Option<u64>,
 		max_height: Option<u64>,
 	) -> Result<Option<LocatedTxKernel>, NodeError>;
+
+	async fn async_submit_mwixnet_route(
+		&self,
+		item: mwixnet_protocol::RouteRelayItem,
+	) -> Result<(), NodeError>;
+
+	async fn async_get_mwixnet_routes(
+		&self,
+		_cursor: Option<mwixnet_protocol::Hash>,
+		_limit: u16,
+	) -> Result<mwixnet_protocol::NodeRoutePage, NodeError> {
+		Ok(mwixnet_protocol::NodeRoutePage {
+			next_cursor: None,
+			items: Vec::new(),
+		})
+	}
+
+	async fn async_submit_mwixnet_offer(
+		&self,
+		_item: mwixnet_protocol::OfferAnnouncement,
+	) -> Result<(), NodeError> {
+		Ok(())
+	}
+
+	async fn async_get_mwixnet_offers(
+		&self,
+		_cursor: Option<mwixnet_protocol::Hash>,
+		_limit: u16,
+	) -> Result<mwixnet_protocol::NodeOfferPage, NodeError> {
+		Ok(mwixnet_protocol::NodeOfferPage {
+			next_cursor: None,
+			items: Vec::new(),
+		})
+	}
 }
 
 /// Error types for interacting with nodes
@@ -232,6 +266,54 @@ impl GrinNode for HttpGrinNode {
 		serde_json::from_value::<Option<LocatedTxKernel>>(value)
 			.map_err(NodeError::DecodeResponseError)
 	}
+
+	async fn async_submit_mwixnet_route(
+		&self,
+		item: mwixnet_protocol::RouteRelayItem,
+	) -> Result<(), NodeError> {
+		self.async_send_request::<serde_json::Value>(
+			"submit_mwixnet_route",
+			&json!({ "item": item }),
+		)
+		.await?;
+		Ok(())
+	}
+
+	async fn async_get_mwixnet_routes(
+		&self,
+		cursor: Option<mwixnet_protocol::Hash>,
+		limit: u16,
+	) -> Result<mwixnet_protocol::NodeRoutePage, NodeError> {
+		self.async_send_request(
+			"get_mwixnet_routes",
+			&json!({ "cursor": cursor, "limit": limit }),
+		)
+		.await
+	}
+
+	async fn async_submit_mwixnet_offer(
+		&self,
+		item: mwixnet_protocol::OfferAnnouncement,
+	) -> Result<(), NodeError> {
+		self.async_send_request::<serde_json::Value>(
+			"submit_mwixnet_offer",
+			&json!({ "item": item }),
+		)
+		.await?;
+		Ok(())
+	}
+
+	async fn async_get_mwixnet_offers(
+		&self,
+		cursor: Option<mwixnet_protocol::Hash>,
+		limit: u16,
+	) -> Result<mwixnet_protocol::NodeOfferPage, NodeError> {
+		self.async_send_request(
+			"get_mwixnet_offers",
+			&json!({ "cursor": cursor, "limit": limit }),
+		)
+		.await
+	}
 }
 
 #[cfg(test)]
@@ -342,6 +424,13 @@ pub mod mock {
 			}
 
 			Ok(None)
+		}
+
+		async fn async_submit_mwixnet_route(
+			&self,
+			_item: mwixnet_protocol::RouteRelayItem,
+		) -> Result<(), NodeError> {
+			Ok(())
 		}
 	}
 }

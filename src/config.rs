@@ -5,9 +5,11 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::result::Result;
 
+use ed25519_dalek::{Signer, SigningKey};
 use grin_core::global::ChainTypes;
 use grin_util::{file, ToHex, ZeroingString};
 use grin_wallet_util::OnionV3Address;
+use mwixnet_protocol::{Hash as MwixnetHash, OnionAddress, OnionPublicKey, PublicKey, Signature};
 use rand::{thread_rng, Rng};
 use ring::{aead, pbkdf2};
 use serde_derive::{Deserialize, Serialize};
@@ -44,12 +46,26 @@ pub struct ServerConfig {
 	pub wallet_owner_secret_path: Option<String>,
 	/// whether to collect excess hop fees in the server wallet
 	pub collect_fees: bool,
+	/// Fee base used to calculate the minimum accepted hop fee.
+	pub accept_fee_base: u64,
+	/// Whether this server runs as a mixer without requiring a configured predecessor.
+	#[serde(default)]
+	pub mixer: bool,
 	/// Ed25519 identity key of the previous mix/swap server (e.g. N_1 if this is N_2)
 	#[serde(with = "grin_onion::crypto::dalek::option_dalek_pubkey_serde", default)]
 	pub prev_server: Option<DalekPublicKey>,
 	/// Ed25519 identity key of the next mix server
 	#[serde(with = "grin_onion::crypto::dalek::option_dalek_pubkey_serde", default)]
 	pub next_server: Option<DalekPublicKey>,
+	/// Ordered mixer identities used when this swap server forms a route.
+	#[serde(default)]
+	pub route_mixers: Vec<PublicKey>,
+	/// Discover mixer identities from the configured Grin node.
+	#[serde(default)]
+	pub discover_mixers: bool,
+	/// Desired number of route participants, including the swap server.
+	#[serde(default = "default_target_route_hops")]
+	pub target_route_hops: u8,
 }
 
 impl ServerConfig {
@@ -63,6 +79,23 @@ impl ServerConfig {
 
 	pub fn onion_pubkey(&self) -> MwixnetServerPublicKey {
 		MwixnetServerPublicKey::from_secret(&self.key)
+	}
+
+	pub fn mwixnet_identity(&self) -> PublicKey {
+		PublicKey(self.server_pubkey().as_ref().to_bytes())
+	}
+
+	pub fn mwixnet_onion_address(&self) -> OnionAddress {
+		OnionAddress(self.mwixnet_identity().0)
+	}
+
+	pub fn mwixnet_onion_pubkey(&self) -> OnionPublicKey {
+		OnionPublicKey(self.onion_pubkey().to_bytes())
+	}
+
+	pub fn sign_mwixnet_hash(&self, hash: MwixnetHash) -> Signature {
+		let key = SigningKey::from_bytes(&self.key.0);
+		Signature(key.sign(hash.as_bytes()).to_bytes())
 	}
 
 	pub fn node_foreign_api_secret(&self) -> Option<String> {
@@ -196,10 +229,28 @@ struct RawConfig {
 	wallet_owner_url: String,
 	wallet_owner_secret_path: Option<String>,
 	collect_fees: bool,
+	#[serde(default = "default_accept_fee_base")]
+	accept_fee_base: u64,
+	#[serde(default)]
+	mixer: bool,
 	#[serde(with = "grin_onion::crypto::dalek::option_dalek_pubkey_serde", default)]
 	prev_server: Option<DalekPublicKey>,
 	#[serde(with = "grin_onion::crypto::dalek::option_dalek_pubkey_serde", default)]
 	next_server: Option<DalekPublicKey>,
+	#[serde(default)]
+	route_mixers: Vec<PublicKey>,
+	#[serde(default)]
+	discover_mixers: bool,
+	#[serde(default = "default_target_route_hops")]
+	target_route_hops: u8,
+}
+
+fn default_accept_fee_base() -> u64 {
+	grin_core::global::DEFAULT_ACCEPT_FEE_BASE
+}
+
+fn default_target_route_hops() -> u8 {
+	2
 }
 
 fn config_comment(key: &str) -> Option<&'static str> {
@@ -216,10 +267,15 @@ fn config_comment(key: &str) -> Option<&'static str> {
 		"collect_fees" => {
 			Some("Collect excess hop fees in the wallet; false pays all hop fees to miners.")
 		}
+		"accept_fee_base" => Some("Fee base used to calculate the minimum accepted hop fee."),
+		"mixer" => Some("Run this server as a mixer."),
 		"prev_server" => {
 			Some("Previous server Ed25519 identity key; setting it makes this server a mixer.")
 		}
 		"next_server" => Some("Next server Ed25519 identity key; leave unset for the final hop."),
+		"route_mixers" => Some("Ordered mixer Ed25519 identities used for route formation."),
+		"discover_mixers" => Some("Discover mixers from the configured Grin node."),
+		"target_route_hops" => Some("Desired route participants, including this swap server."),
 		_ => None,
 	}
 }
@@ -273,8 +329,13 @@ pub fn write_config(
 		wallet_owner_url: server_config.wallet_owner_url.clone(),
 		wallet_owner_secret_path: server_config.wallet_owner_secret_path.clone(),
 		collect_fees: server_config.collect_fees,
+		accept_fee_base: server_config.accept_fee_base,
+		mixer: server_config.mixer,
 		prev_server: server_config.prev_server.clone(),
 		next_server: server_config.next_server.clone(),
+		route_mixers: server_config.route_mixers.clone(),
+		discover_mixers: server_config.discover_mixers,
+		target_route_hops: server_config.target_route_hops,
 	};
 	let encoded = documented_config(&raw_config)?;
 
@@ -309,8 +370,13 @@ pub fn load_config(
 		wallet_owner_url: raw_config.wallet_owner_url,
 		wallet_owner_secret_path: raw_config.wallet_owner_secret_path,
 		collect_fees: raw_config.collect_fees,
+		accept_fee_base: raw_config.accept_fee_base,
+		mixer: raw_config.mixer,
 		prev_server: raw_config.prev_server,
 		next_server: raw_config.next_server,
+		route_mixers: raw_config.route_mixers,
+		discover_mixers: raw_config.discover_mixers,
+		target_route_hops: raw_config.target_route_hops,
 	})
 }
 
@@ -369,8 +435,13 @@ pub mod test_util {
 			wallet_owner_url: "127.0.0.1:3420".parse()?,
 			wallet_owner_secret_path: None,
 			collect_fees: true,
+			accept_fee_base: grin_core::global::DEFAULT_ACCEPT_FEE_BASE,
+			mixer: prev_server.is_some(),
 			prev_server: prev_server.clone(),
 			next_server: next_server.clone(),
+			route_mixers: Vec::new(),
+			discover_mixers: false,
+			target_route_hops: 2,
 		};
 		Ok(config)
 	}

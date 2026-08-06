@@ -75,3 +75,14 @@ subcommands:
             short: o
             takes_value: true
             required: false
+  - revoke-route:
+      about: Revokes this server's participation in a route
+      args:
+        - route_id:
+            help: Route identifier
+            index: 1
+            required: true
+        - manifest_sequence:
+            help: Route manifest sequence
+            index: 2
+            required: true

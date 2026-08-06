@@ -29,11 +29,68 @@ With a fully synced node and, when collecting fees, a wallet listening at the co
 
 #### Wallet workflow
 
-1. Collect each server's X25519 onion key in route order.
-2. Run the wallet's experimental `mwixnet` command with an eligible output commitment, the first server's onion address, `fee_per_hop`, and the ordered server keys.
-3. The wallet creates and locks the request, then submits it to the first server's `/v1` endpoint.
+Route discovery requires a Grin node and grin-wallet with MWixnet discovery support.
+Point the wallet at that testnet node, then list the routes whose signed metadata
+and entry onion pass the wallet checks:
 
-Owner API clients can instead call `create_mwixnet_req` and submit the returned `request` field themselves. The result also contains the associated `tx_id` when locking was requested. Routing between servers is fixed by each server's `prev_server` and `next_server` configuration.
+```bash
+grin-wallet --testnet mwixnet routes
+```
+
+Select an unspent output and submit it through a route. Route IDs must be copied
+in full; fees are specified in nanogrin:
+
+```bash
+grin-wallet --testnet outputs
+grin-wallet --testnet mwixnet send <OUTPUT_COMMITMENT> \
+  --route <ROUTE_ID> \
+  --max_total_fee <MAX_TOTAL_FEE>
+```
+
+The success response contains a wallet request ID. The wallet persists the exact
+request before submission and keeps its input locked while the outcome is
+unknown. Inspect all local requests or refresh one request idempotently with:
+
+```bash
+grin-wallet --testnet mwixnet status
+grin-wallet --testnet mwixnet retry <WALLET_REQUEST_ID>
+```
+
+If submission times out, use `status` and `retry` before attempting a
+cancellation. A request can only be cancelled while the swap server still
+reports it as accepted:
+
+```bash
+grin-wallet --testnet mwixnet cancel <WALLET_REQUEST_ID>
+```
+
+Do not cancel a request that is already batched, posting, posted, or confirmed.
+Check `grin-wallet --testnet outputs` after the route has completed and the
+transaction has confirmed.
+
+The manual command remains available for legacy routes: collect each server's
+X25519 onion key in route order and provide the entry onion, `fee_per_hop`, and
+ordered keys directly to `grin-wallet --testnet mwixnet`.
+
+Owner API clients can call `create_mwixnet_route_req` for a discovered route or
+`create_mwixnet_req` for a legacy route and submit the returned `request` field
+themselves. The result also contains the associated `tx_id` when locking was
+requested. Legacy routing is fixed by each server's `prev_server` and
+`next_server` configuration.
+
+#### Known limitations
+
+Route discovery is experimental and does not change Grin consensus. `Healthy`
+describes the latest signed server-to-server route check; wallet entry
+reachability is a separate local preflight. Tor circuit or HTTP timeouts can
+still occur after the wallet's bounded retries, so a timeout is not proof that
+the server rejected a request.
+
+Announcements and health proofs are short-lived. A previously displayed route
+can therefore become draining or expire before submission. Offer proof of work
+limits spam but does not prove operator independence or available mixing
+capacity. Testnet route relay can run without an allowlist; mainnet route relay
+requires `route_relay_allowlist` in the Grin node configuration.
 
 ### SWAP API
 The Swap Server (N<sub>1</sub>) provides the `swap` API, which is publicly available for use by GRIN wallets.

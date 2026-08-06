@@ -57,34 +57,48 @@ tor-keymgr = "0.44.0"
 tor-log-ratelim = "0.44.0"
 tor-rtcompat = { version = "0.44.0", features = ["static"] }
 log = "0.4.20"
+mwixnet-protocol = { path = "protocol" }
 
 # Bleeding Edge Grin Deps
 grin_secp256k1zkp = { version = "0.7.15", features = ["bullet-proof-sizing"] }
-grin_api = { git = "https://github.com/mimblewimble/grin", branch = "staging" }
-grin_core = { git = "https://github.com/mimblewimble/grin", branch = "staging" }
-grin_chain = { git = "https://github.com/mimblewimble/grin", branch = "staging" }
-grin_keychain = { git = "https://github.com/mimblewimble/grin", branch = "staging" }
-grin_p2p = { git = "https://github.com/mimblewimble/grin", branch = "staging" }
-grin_servers = { git = "https://github.com/mimblewimble/grin", branch = "staging" }
-grin_store = { git = "https://github.com/mimblewimble/grin", branch = "staging" }
-grin_util = { git = "https://github.com/mimblewimble/grin", branch = "staging" }
-grin_wallet_api = { git = "https://github.com/wiesche89/grin-wallet", rev = "fed6733a2209aec2ed963a5691d91c6f00b4261d" }
-grin_wallet_config = { git = "https://github.com/wiesche89/grin-wallet", rev = "fed6733a2209aec2ed963a5691d91c6f00b4261d" }
-grin_wallet_controller = { git = "https://github.com/wiesche89/grin-wallet", rev = "fed6733a2209aec2ed963a5691d91c6f00b4261d" }
-grin_wallet_impls = { git = "https://github.com/wiesche89/grin-wallet", rev = "fed6733a2209aec2ed963a5691d91c6f00b4261d" }
-grin_wallet_libwallet = { git = "https://github.com/wiesche89/grin-wallet", rev = "fed6733a2209aec2ed963a5691d91c6f00b4261d" }
-grin_wallet_util = { git = "https://github.com/wiesche89/grin-wallet", rev = "fed6733a2209aec2ed963a5691d91c6f00b4261d" }
+grin_api = { git = "https://github.com/wiesche89/grin", rev = "ad87600739308820de5e267e4a2e8d4f21bb3a29" }
+grin_core = { git = "https://github.com/wiesche89/grin", rev = "ad87600739308820de5e267e4a2e8d4f21bb3a29" }
+grin_chain = { git = "https://github.com/wiesche89/grin", rev = "ad87600739308820de5e267e4a2e8d4f21bb3a29" }
+grin_keychain = { git = "https://github.com/wiesche89/grin", rev = "ad87600739308820de5e267e4a2e8d4f21bb3a29" }
+grin_p2p = { git = "https://github.com/wiesche89/grin", rev = "ad87600739308820de5e267e4a2e8d4f21bb3a29" }
+grin_servers = { git = "https://github.com/wiesche89/grin", rev = "ad87600739308820de5e267e4a2e8d4f21bb3a29" }
+grin_store = { git = "https://github.com/wiesche89/grin", rev = "ad87600739308820de5e267e4a2e8d4f21bb3a29" }
+grin_util = { git = "https://github.com/wiesche89/grin", rev = "ad87600739308820de5e267e4a2e8d4f21bb3a29" }
+grin_wallet_api = { git = "https://github.com/wiesche89/grin-wallet", rev = "093ed06c316382606fe0ec51329fec15ee86f0ce" }
+grin_wallet_config = { git = "https://github.com/wiesche89/grin-wallet", rev = "093ed06c316382606fe0ec51329fec15ee86f0ce" }
+grin_wallet_controller = { git = "https://github.com/wiesche89/grin-wallet", rev = "093ed06c316382606fe0ec51329fec15ee86f0ce" }
+grin_wallet_impls = { git = "https://github.com/wiesche89/grin-wallet", rev = "093ed06c316382606fe0ec51329fec15ee86f0ce" }
+grin_wallet_libwallet = { git = "https://github.com/wiesche89/grin-wallet", rev = "093ed06c316382606fe0ec51329fec15ee86f0ce" }
+grin_wallet_util = { git = "https://github.com/wiesche89/grin-wallet", rev = "093ed06c316382606fe0ec51329fec15ee86f0ce" }
 
 [dev-dependencies]
-grin_wallet_libwallet = { git = "https://github.com/wiesche89/grin-wallet", rev = "fed6733a2209aec2ed963a5691d91c6f00b4261d", features = ["mwixnet-test"] }
+grin_wallet_libwallet = { git = "https://github.com/wiesche89/grin-wallet", rev = "093ed06c316382606fe0ec51329fec15ee86f0ce", features = ["mwixnet-test"] }
 x25519-dalek = { version = "2", features = ["static_secrets"] }
 
 [patch."https://github.com/wiesche89/grin-wallet"]
-grin_api = { git = "https://github.com/mimblewimble/grin", branch = "staging" }
-grin_chain = { git = "https://github.com/mimblewimble/grin", branch = "staging" }
-grin_core = { git = "https://github.com/mimblewimble/grin", branch = "staging" }
-grin_keychain = { git = "https://github.com/mimblewimble/grin", branch = "staging" }
-grin_p2p = { git = "https://github.com/mimblewimble/grin", branch = "staging" }
-grin_pool = { git = "https://github.com/mimblewimble/grin", branch = "staging" }
-grin_store = { git = "https://github.com/mimblewimble/grin", branch = "staging" }
-grin_util = { git = "https://github.com/mimblewimble/grin", branch = "staging" }
+grin_api = { git = "https://github.com/wiesche89/grin", rev = "ad87600739308820de5e267e4a2e8d4f21bb3a29" }
+grin_chain = { git = "https://github.com/wiesche89/grin", rev = "ad87600739308820de5e267e4a2e8d4f21bb3a29" }
+grin_core = { git = "https://github.com/wiesche89/grin", rev = "ad87600739308820de5e267e4a2e8d4f21bb3a29" }
+grin_keychain = { git = "https://github.com/wiesche89/grin", rev = "ad87600739308820de5e267e4a2e8d4f21bb3a29" }
+grin_p2p = { git = "https://github.com/wiesche89/grin", rev = "ad87600739308820de5e267e4a2e8d4f21bb3a29" }
+grin_pool = { git = "https://github.com/wiesche89/grin", rev = "ad87600739308820de5e267e4a2e8d4f21bb3a29" }
+grin_store = { git = "https://github.com/wiesche89/grin", rev = "ad87600739308820de5e267e4a2e8d4f21bb3a29" }
+grin_util = { git = "https://github.com/wiesche89/grin", rev = "ad87600739308820de5e267e4a2e8d4f21bb3a29" }
+
+[patch."https://github.com/wiesche89/mwixnet"]
+mwixnet-protocol = { path = "protocol" }
+
+[patch."https://github.com/mimblewimble/grin"]
+grin_api = { git = "https://github.com/wiesche89/grin", rev = "ad87600739308820de5e267e4a2e8d4f21bb3a29" }
+grin_chain = { git = "https://github.com/wiesche89/grin", rev = "ad87600739308820de5e267e4a2e8d4f21bb3a29" }
+grin_core = { git = "https://github.com/wiesche89/grin", rev = "ad87600739308820de5e267e4a2e8d4f21bb3a29" }
+grin_keychain = { git = "https://github.com/wiesche89/grin", rev = "ad87600739308820de5e267e4a2e8d4f21bb3a29" }
+grin_p2p = { git = "https://github.com/wiesche89/grin", rev = "ad87600739308820de5e267e4a2e8d4f21bb3a29" }
+grin_pool = { git = "https://github.com/wiesche89/grin", rev = "ad87600739308820de5e267e4a2e8d4f21bb3a29" }
+grin_store = { git = "https://github.com/wiesche89/grin", rev = "ad87600739308820de5e267e4a2e8d4f21bb3a29" }
+grin_util = { git = "https://github.com/wiesche89/grin", rev = "ad87600739308820de5e267e4a2e8d4f21bb3a29" }

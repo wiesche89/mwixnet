@@ -15,9 +15,13 @@ use grin_onion::onion::Onion;
 use grin_wallet_libwallet::mwixnet::onion as grin_onion;
 
 use crate::config::ServerConfig;
-use crate::servers::mix_rpc::{MixReq, MixResp};
+use crate::servers::mix_rpc::{MixReq, MixResp, RouteMixReq};
 use crate::tor::TorService;
 use crate::{http, tor};
+
+pub type MixClientFactory = Arc<
+	dyn Fn(mwixnet_protocol::PublicKey) -> Result<Arc<dyn MixClient>, MixClientError> + Send + Sync,
+>;
 
 /// Error types for interacting with nodes
 #[derive(Error, Debug)]
@@ -32,6 +36,8 @@ pub enum MixClientError {
 	DecodeResponseError(serde_json::Error),
 	#[error("Error in JSON-RPC response: {0:?}")]
 	ResponseError(grin_api::json_rpc::RpcError),
+	#[error("MWixnet protocol error: {0}")]
+	Protocol(mwixnet_protocol::ProtocolRpcError),
 	#[error("Custom client error: {0:?}")]
 	Custom(String),
 }
@@ -41,6 +47,61 @@ pub enum MixClientError {
 pub trait MixClient: Send + Sync {
 	/// Swaps the outputs provided and returns the final swapped outputs and kernels.
 	async fn mix_outputs(&self, onions: &Vec<Onion>) -> Result<MixResp, MixClientError>;
+
+	async fn mix_route(
+		&self,
+		_route_id: mwixnet_protocol::Hash,
+		_manifest_sequence: u64,
+		_batch_id: mwixnet_protocol::Hash,
+		_onions: &Vec<Onion>,
+	) -> Result<MixResp, MixClientError> {
+		Err(MixClientError::Custom(
+			"route batches are not supported".into(),
+		))
+	}
+
+	async fn get_mwixnet_offer(&self) -> Result<mwixnet_protocol::MwixnetOffer, MixClientError> {
+		Err(MixClientError::Custom(
+			"route discovery is not supported".into(),
+		))
+	}
+
+	async fn propose_route(
+		&self,
+		_proposal: mwixnet_protocol::RouteProposal,
+		_offers: Vec<mwixnet_protocol::MwixnetOffer>,
+	) -> Result<mwixnet_protocol::RouteAcceptance, MixClientError> {
+		Err(MixClientError::Custom(
+			"route discovery is not supported".into(),
+		))
+	}
+
+	async fn activate_route(
+		&self,
+		_manifest: mwixnet_protocol::RouteManifest,
+	) -> Result<(), MixClientError> {
+		Err(MixClientError::Custom(
+			"route discovery is not supported".into(),
+		))
+	}
+
+	async fn probe_route(
+		&self,
+		_request: mwixnet_protocol::HealthRequest,
+	) -> Result<mwixnet_protocol::HealthResponse, MixClientError> {
+		Err(MixClientError::Custom(
+			"route health is not supported".into(),
+		))
+	}
+
+	async fn revoke_route(
+		&self,
+		_revocation: mwixnet_protocol::RouteRevocation,
+	) -> Result<(), MixClientError> {
+		Err(MixClientError::Custom(
+			"route discovery is not supported".into(),
+		))
+	}
 }
 
 pub struct MixClientImpl<R: Runtime> {
@@ -80,6 +141,11 @@ impl<R: Runtime> MixClientImpl<R> {
 			serde_json::from_str(&res).map_err(MixClientError::DecodeResponseError)?;
 
 		if let Some(ref e) = response.error {
+			if let Some(data) = &e.data {
+				if let Ok(error) = serde_json::from_value(data.clone()) {
+					return Err(MixClientError::Protocol(error));
+				}
+			}
 			return Err(MixClientError::ResponseError(e.clone()));
 		}
 
@@ -103,6 +169,78 @@ impl<R: Runtime> MixClient for MixClientImpl<R> {
 
 		self.async_send_json_request::<MixResp>(&self.addr, "mix", &json!([mix]))
 			.await
+	}
+
+	async fn mix_route(
+		&self,
+		route_id: mwixnet_protocol::Hash,
+		manifest_sequence: u64,
+		batch_id: mwixnet_protocol::Hash,
+		onions: &Vec<Onion>,
+	) -> Result<MixResp, MixClientError> {
+		let mut request = RouteMixReq {
+			version: mwixnet_protocol::MWIXNET_PROTOCOL_VERSION,
+			msg_type: mwixnet_protocol::MwixnetType::MixReq,
+			route_id,
+			manifest_sequence,
+			batch_id,
+			onions: onions.clone(),
+			sig: dalek::sign(&self.config.key, &[]).map_err(MixClientError::Dalek)?,
+		};
+		request.sig =
+			dalek::sign(&self.config.key, &request.hash().0).map_err(MixClientError::Dalek)?;
+		self.async_send_json_request::<MixResp>(&self.addr, "mix", &json!([MixReq::Route(request)]))
+			.await
+	}
+
+	async fn get_mwixnet_offer(&self) -> Result<mwixnet_protocol::MwixnetOffer, MixClientError> {
+		self.async_send_json_request(&self.addr, "get_mwixnet_offer", &json!({}))
+			.await
+	}
+
+	async fn propose_route(
+		&self,
+		proposal: mwixnet_protocol::RouteProposal,
+		offers: Vec<mwixnet_protocol::MwixnetOffer>,
+	) -> Result<mwixnet_protocol::RouteAcceptance, MixClientError> {
+		self.async_send_json_request(
+			&self.addr,
+			"propose_route",
+			&json!({ "proposal": proposal, "offers": offers }),
+		)
+		.await
+	}
+
+	async fn activate_route(
+		&self,
+		manifest: mwixnet_protocol::RouteManifest,
+	) -> Result<(), MixClientError> {
+		self.async_send_json_request(
+			&self.addr,
+			"activate_route",
+			&json!({ "manifest": manifest }),
+		)
+		.await
+	}
+
+	async fn probe_route(
+		&self,
+		request: mwixnet_protocol::HealthRequest,
+	) -> Result<mwixnet_protocol::HealthResponse, MixClientError> {
+		self.async_send_json_request(&self.addr, "probe_route", &json!({ "request": request }))
+			.await
+	}
+
+	async fn revoke_route(
+		&self,
+		revocation: mwixnet_protocol::RouteRevocation,
+	) -> Result<(), MixClientError> {
+		self.async_send_json_request(
+			&self.addr,
+			"revoke_route",
+			&json!({ "revocation": revocation }),
+		)
+		.await
 	}
 }
 

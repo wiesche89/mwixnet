@@ -27,6 +27,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "aead"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d122413f284cf2d62fb1b7db97e02edb8cda96d769b16e443a4f6195e35662b0"
+dependencies = [
+ "crypto-common",
+ "generic-array 0.14.7",
+]
+
+[[package]]
 name = "aes"
 version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -47,7 +57,7 @@ dependencies = [
  "age-core",
  "base64 0.13.1",
  "bech32 0.8.1",
- "chacha20poly1305",
+ "chacha20poly1305 0.9.1",
  "cipher 0.4.4",
  "cookie-factory",
  "hkdf",
@@ -75,7 +85,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "00a5c8d8a33abc74ad393896a6305351dd159d0e184788f4729e3c80e397fa45"
 dependencies = [
  "base64 0.13.1",
- "chacha20poly1305",
+ "chacha20poly1305 0.9.1",
  "cookie-factory",
  "hkdf",
  "io_tee",
@@ -926,10 +936,23 @@ version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a18446b09be63d457bbec447509e85f662f32952b035ce892290396bc0b0cff5"
 dependencies = [
- "aead",
+ "aead 0.4.3",
  "chacha20 0.8.2",
  "cipher 0.3.0",
- "poly1305",
+ "poly1305 0.7.2",
+ "zeroize",
+]
+
+[[package]]
+name = "chacha20poly1305"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "10cd79432192d1c0f4e1a0fef9527696cc039165d729fb41b3f4f4f354c2dc35"
+dependencies = [
+ "aead 0.5.2",
+ "chacha20 0.9.1",
+ "cipher 0.4.4",
+ "poly1305 0.8.0",
  "zeroize",
 ]
 
@@ -1173,6 +1196,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1bfb12502f3fc46cca1bb51ac28df9d618d813cdc3d2f25b9fe775a34af26bb3"
 dependencies = [
  "generic-array 0.14.7",
+ "rand_core 0.6.4",
  "typenum",
 ]
 
@@ -2450,7 +2474,7 @@ dependencies = [
 [[package]]
 name = "grin_api"
 version = "5.5.1-alpha.0"
-source = "git+https://github.com/mimblewimble/grin?branch=staging#857254bb1e98fdb039a4e2579a024835e1bd20cb"
+source = "git+https://github.com/wiesche89/grin?rev=ad87600739308820de5e267e4a2e8d4f21bb3a29#ad87600739308820de5e267e4a2e8d4f21bb3a29"
 dependencies = [
  "bytes 1.12.1",
  "easy-jsonrpc-mw",
@@ -2483,7 +2507,7 @@ dependencies = [
 [[package]]
 name = "grin_chain"
 version = "5.5.1-alpha.0"
-source = "git+https://github.com/mimblewimble/grin?branch=staging#857254bb1e98fdb039a4e2579a024835e1bd20cb"
+source = "git+https://github.com/wiesche89/grin?rev=ad87600739308820de5e267e4a2e8d4f21bb3a29#ad87600739308820de5e267e4a2e8d4f21bb3a29"
 dependencies = [
  "bit-vec",
  "bitflags 1.3.2",
@@ -2506,7 +2530,7 @@ dependencies = [
 [[package]]
 name = "grin_core"
 version = "5.5.1-alpha.0"
-source = "git+https://github.com/mimblewimble/grin?branch=staging#857254bb1e98fdb039a4e2579a024835e1bd20cb"
+source = "git+https://github.com/wiesche89/grin?rev=ad87600739308820de5e267e4a2e8d4f21bb3a29#ad87600739308820de5e267e4a2e8d4f21bb3a29"
 dependencies = [
  "blake2-rfc",
  "byteorder",
@@ -2532,7 +2556,7 @@ dependencies = [
 [[package]]
 name = "grin_keychain"
 version = "5.5.1-alpha.0"
-source = "git+https://github.com/mimblewimble/grin?branch=staging#857254bb1e98fdb039a4e2579a024835e1bd20cb"
+source = "git+https://github.com/wiesche89/grin?rev=ad87600739308820de5e267e4a2e8d4f21bb3a29#ad87600739308820de5e267e4a2e8d4f21bb3a29"
 dependencies = [
  "blake2-rfc",
  "byteorder",
@@ -2554,7 +2578,7 @@ dependencies = [
 [[package]]
 name = "grin_p2p"
 version = "5.5.1-alpha.0"
-source = "git+https://github.com/mimblewimble/grin?branch=staging#857254bb1e98fdb039a4e2579a024835e1bd20cb"
+source = "git+https://github.com/wiesche89/grin?rev=ad87600739308820de5e267e4a2e8d4f21bb3a29#ad87600739308820de5e267e4a2e8d4f21bb3a29"
 dependencies = [
  "bitflags 1.3.2",
  "built",
@@ -2567,6 +2591,7 @@ dependencies = [
  "grin_util",
  "log",
  "lru-cache",
+ "mwixnet-protocol",
  "num",
  "rand 0.6.5",
  "serde",
@@ -2577,7 +2602,7 @@ dependencies = [
 [[package]]
 name = "grin_pool"
 version = "5.5.1-alpha.0"
-source = "git+https://github.com/mimblewimble/grin?branch=staging#857254bb1e98fdb039a4e2579a024835e1bd20cb"
+source = "git+https://github.com/wiesche89/grin?rev=ad87600739308820de5e267e4a2e8d4f21bb3a29#ad87600739308820de5e267e4a2e8d4f21bb3a29"
 dependencies = [
  "blake2-rfc",
  "chrono",
@@ -2609,7 +2634,7 @@ dependencies = [
 [[package]]
 name = "grin_servers"
 version = "5.5.1-alpha.0"
-source = "git+https://github.com/mimblewimble/grin?branch=staging#857254bb1e98fdb039a4e2579a024835e1bd20cb"
+source = "git+https://github.com/wiesche89/grin?rev=ad87600739308820de5e267e4a2e8d4f21bb3a29#ad87600739308820de5e267e4a2e8d4f21bb3a29"
 dependencies = [
  "async-stream",
  "chrono",
@@ -2641,7 +2666,7 @@ dependencies = [
 [[package]]
 name = "grin_store"
 version = "5.5.1-alpha.0"
-source = "git+https://github.com/mimblewimble/grin?branch=staging#857254bb1e98fdb039a4e2579a024835e1bd20cb"
+source = "git+https://github.com/wiesche89/grin?rev=ad87600739308820de5e267e4a2e8d4f21bb3a29#ad87600739308820de5e267e4a2e8d4f21bb3a29"
 dependencies = [
  "byteorder",
  "croaring",
@@ -2660,7 +2685,7 @@ dependencies = [
 [[package]]
 name = "grin_util"
 version = "5.5.1-alpha.0"
-source = "git+https://github.com/mimblewimble/grin?branch=staging#857254bb1e98fdb039a4e2579a024835e1bd20cb"
+source = "git+https://github.com/wiesche89/grin?rev=ad87600739308820de5e267e4a2e8d4f21bb3a29#ad87600739308820de5e267e4a2e8d4f21bb3a29"
 dependencies = [
  "anyhow",
  "backtrace",
@@ -2681,7 +2706,7 @@ dependencies = [
 [[package]]
 name = "grin_wallet_api"
 version = "5.4.1"
-source = "git+https://github.com/wiesche89/grin-wallet?rev=fed6733a2209aec2ed963a5691d91c6f00b4261d#fed6733a2209aec2ed963a5691d91c6f00b4261d"
+source = "git+https://github.com/wiesche89/grin-wallet?rev=093ed06c316382606fe0ec51329fec15ee86f0ce#093ed06c316382606fe0ec51329fec15ee86f0ce"
 dependencies = [
  "base64 0.12.3",
  "chrono",
@@ -2706,7 +2731,7 @@ dependencies = [
 [[package]]
 name = "grin_wallet_config"
 version = "5.4.1"
-source = "git+https://github.com/wiesche89/grin-wallet?rev=fed6733a2209aec2ed963a5691d91c6f00b4261d#fed6733a2209aec2ed963a5691d91c6f00b4261d"
+source = "git+https://github.com/wiesche89/grin-wallet?rev=093ed06c316382606fe0ec51329fec15ee86f0ce#093ed06c316382606fe0ec51329fec15ee86f0ce"
 dependencies = [
  "dirs 2.0.2",
  "grin_core",
@@ -2722,8 +2747,9 @@ dependencies = [
 [[package]]
 name = "grin_wallet_controller"
 version = "5.4.1"
-source = "git+https://github.com/wiesche89/grin-wallet?rev=fed6733a2209aec2ed963a5691d91c6f00b4261d#fed6733a2209aec2ed963a5691d91c6f00b4261d"
+source = "git+https://github.com/wiesche89/grin-wallet?rev=093ed06c316382606fe0ec51329fec15ee86f0ce#093ed06c316382606fe0ec51329fec15ee86f0ce"
 dependencies = [
+ "chrono",
  "easy-jsonrpc-mw",
  "grin_api",
  "grin_chain",
@@ -2753,7 +2779,7 @@ dependencies = [
 [[package]]
 name = "grin_wallet_impls"
 version = "5.4.1"
-source = "git+https://github.com/wiesche89/grin-wallet?rev=fed6733a2209aec2ed963a5691d91c6f00b4261d#fed6733a2209aec2ed963a5691d91c6f00b4261d"
+source = "git+https://github.com/wiesche89/grin-wallet?rev=093ed06c316382606fe0ec51329fec15ee86f0ce#093ed06c316382606fe0ec51329fec15ee86f0ce"
 dependencies = [
  "arti-client",
  "base64 0.12.3",
@@ -2801,7 +2827,7 @@ dependencies = [
 [[package]]
 name = "grin_wallet_libwallet"
 version = "5.4.1"
-source = "git+https://github.com/wiesche89/grin-wallet?rev=fed6733a2209aec2ed963a5691d91c6f00b4261d#fed6733a2209aec2ed963a5691d91c6f00b4261d"
+source = "git+https://github.com/wiesche89/grin-wallet?rev=093ed06c316382606fe0ec51329fec15ee86f0ce#093ed06c316382606fe0ec51329fec15ee86f0ce"
 dependencies = [
  "age",
  "base64 0.9.3",
@@ -2822,6 +2848,7 @@ dependencies = [
  "hmac 0.12.1",
  "lazy_static",
  "log",
+ "mwixnet-protocol",
  "num-bigint 0.2.6",
  "rand 0.6.5",
  "regex",
@@ -2839,7 +2866,7 @@ dependencies = [
 [[package]]
 name = "grin_wallet_util"
 version = "5.4.1"
-source = "git+https://github.com/wiesche89/grin-wallet?rev=fed6733a2209aec2ed963a5691d91c6f00b4261d#fed6733a2209aec2ed963a5691d91c6f00b4261d"
+source = "git+https://github.com/wiesche89/grin-wallet?rev=093ed06c316382606fe0ec51329fec15ee86f0ce#093ed06c316382606fe0ec51329fec15ee86f0ce"
 dependencies = [
  "data-encoding",
  "ed25519-dalek",
@@ -4080,6 +4107,7 @@ dependencies = [
  "jsonrpc-http-server",
  "lazy_static",
  "log",
+ "mwixnet-protocol",
  "pbkdf2 0.8.0",
  "rand 0.7.3",
  "remove_dir_all",
@@ -4100,6 +4128,23 @@ dependencies = [
  "tor-llcrypto",
  "tor-log-ratelim",
  "tor-rtcompat",
+ "x25519-dalek 2.0.1",
+]
+
+[[package]]
+name = "mwixnet-protocol"
+version = "0.1.0"
+dependencies = [
+ "chacha20poly1305 0.10.1",
+ "data-encoding",
+ "ed25519-dalek",
+ "grin_core",
+ "grin_util",
+ "hkdf",
+ "serde",
+ "serde_json",
+ "sha2 0.10.8",
+ "sha3 0.10.8",
  "x25519-dalek 2.0.1",
 ]
 
@@ -4863,7 +4908,18 @@ checksum = "048aeb476be11a4b6ca432ca569e375810de9294ae78f4774e78ea98a9246ede"
 dependencies = [
  "cpufeatures 0.2.11",
  "opaque-debug 0.3.0",
- "universal-hash",
+ "universal-hash 0.4.0",
+]
+
+[[package]]
+name = "poly1305"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8159bd90725d2df49889a078b54f4f79e87f1f8a8444194cdca81d38f5393abf"
+dependencies = [
+ "cpufeatures 0.2.11",
+ "opaque-debug 0.3.0",
+ "universal-hash 0.5.1",
 ]
 
 [[package]]
@@ -8231,6 +8287,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8326b2c654932e3e4f9196e69d08fdf7cfd718e1dc6f66b347e6024a0c961402"
 dependencies = [
  "generic-array 0.14.7",
+ "subtle",
+]
+
+[[package]]
+name = "universal-hash"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fc1de2c688dc15305988b563c3854064043356019f97a4b46276fe734c4f07ea"
+dependencies = [
+ "crypto-common",
  "subtle",
 ]
 

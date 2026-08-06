@@ -12,7 +12,9 @@ use grin_wallet_api::Owner;
 use grin_wallet_config::WalletConfig;
 use grin_wallet_controller::controller;
 use grin_wallet_impls::{DefaultLCProvider, DefaultWalletImpl, HTTPNodeClient};
-use grin_wallet_libwallet::mwixnet::{MwixnetReqCreationResult, MwixnetServerPublicKey};
+use grin_wallet_libwallet::mwixnet::{
+	MwixnetReqCreationResult, MwixnetRouteReqCreationResult, MwixnetServerPublicKey, WalletRoute,
+};
 use grin_wallet_libwallet::{InitTxArgs, Slate, VersionedSlate, WalletInfo, WalletInst};
 use log::error;
 use mwixnet::http;
@@ -285,6 +287,38 @@ impl IntegrationGrinWallet {
 		self.http_client
 			.clone()
 			.async_perform_request("create_mwixnet_req", &params)
+			.await
+	}
+
+	pub async fn async_get_mwixnet_routes(
+		&self,
+		include_unusable: bool,
+	) -> Result<Vec<WalletRoute>, mwixnet::WalletError> {
+		let params = json!({
+			"token": self.http_client.get_token(),
+			"include_unusable": include_unusable,
+		});
+		self.http_client
+			.clone()
+			.async_perform_request("get_mwixnet_routes", &params)
+			.await
+	}
+
+	pub async fn async_create_mwixnet_route_req(
+		&self,
+		commitment: &Commitment,
+		route_id: mwixnet_protocol::Hash,
+	) -> Result<MwixnetRouteReqCreationResult, mwixnet::WalletError> {
+		let params = json!({
+			"token": self.http_client.get_token(),
+			"commitment": commitment.to_hex(),
+			"route_id": route_id,
+			"request_ttl_blocks": null,
+			"max_total_fee": "1000000000",
+		});
+		self.http_client
+			.clone()
+			.async_perform_request("create_mwixnet_route_req", &params)
 			.await
 	}
 
