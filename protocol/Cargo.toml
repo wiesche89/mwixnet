@@ -1,0 +1,19 @@
+[package]
+name = "mwixnet-protocol"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+chacha20poly1305 = "0.10"
+data-encoding = "2.5.0"
+ed25519-dalek = "2.1.1"
+grin_core = { git = "https://github.com/mimblewimble/grin", branch = "staging" }
+grin_util = { git = "https://github.com/mimblewimble/grin", branch = "staging" }
+hkdf = "0.12"
+serde = { version = "1", features = ["derive"] }
+sha2 = "0.10"
+sha3 = "0.10.8"
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+
+[dev-dependencies]
+serde_json = "1"
