@@ -178,17 +178,18 @@ impl<R: Runtime> MixClient for MixClientImpl<R> {
 		batch_id: mwixnet_protocol::Hash,
 		onions: &Vec<Onion>,
 	) -> Result<MixResp, MixClientError> {
-		let mut request = RouteMixReq {
+		let request_hash =
+			RouteMixReq::signing_hash(&route_id, manifest_sequence, &batch_id, onions);
+		let request = RouteMixReq {
 			version: mwixnet_protocol::MWIXNET_PROTOCOL_VERSION,
 			msg_type: mwixnet_protocol::MwixnetType::MixReq,
 			route_id,
 			manifest_sequence,
 			batch_id,
 			onions: onions.clone(),
-			sig: dalek::sign(&self.config.key, &[]).map_err(MixClientError::Dalek)?,
+			sig: dalek::sign(&self.config.key, request_hash.as_bytes())
+				.map_err(MixClientError::Dalek)?,
 		};
-		request.sig =
-			dalek::sign(&self.config.key, &request.hash().0).map_err(MixClientError::Dalek)?;
 		self.async_send_json_request::<MixResp>(&self.addr, "mix", &json!([MixReq::Route(request)]))
 			.await
 	}

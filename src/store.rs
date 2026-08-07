@@ -1257,17 +1257,19 @@ mod tests {
 			chrono::Utc::now().timestamp_nanos_opt().unwrap()
 		);
 		let key = secp::random_secret(false);
-		let mut request = RouteMixReq {
+		let route_id = MwixnetHash([1; 32]);
+		let batch_id = MwixnetHash([2; 32]);
+		let onions = vec![onion_test_util::rand_onion()];
+		let request_hash = RouteMixReq::signing_hash(&route_id, 1, &batch_id, &onions);
+		let request = RouteMixReq {
 			version: mwixnet_protocol::MWIXNET_PROTOCOL_VERSION,
 			msg_type: mwixnet_protocol::MwixnetType::MixReq,
-			route_id: MwixnetHash([1; 32]),
+			route_id,
 			manifest_sequence: 1,
-			batch_id: MwixnetHash([2; 32]),
-			onions: vec![onion_test_util::rand_onion()],
-			sig: dalek::sign(&key, &[])?,
+			batch_id,
+			onions,
+			sig: dalek::sign(&key, request_hash.as_bytes())?,
 		};
-		request.sig = dalek::sign(&key, &request.hash().0)?;
-		let request_hash = request.hash();
 		{
 			let store = RouteStore::new(&root)?;
 			store.save_batch(

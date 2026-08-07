@@ -10,7 +10,6 @@ use secp256k1zkp::key::ZERO_KEY;
 use thiserror::Error;
 
 use grin_onion::crypto::comsig::ComSignature;
-use grin_onion::crypto::dalek;
 use grin_onion::crypto::secp::{Commitment, Secp256k1, SecretKey};
 use grin_onion::onion::{Onion, OnionError};
 use grin_wallet_libwallet::mwixnet::onion as grin_onion;
@@ -292,19 +291,12 @@ impl SwapServerImpl {
 					let batch_id = route
 						.batch_id
 						.unwrap_or_else(|| mwixnet_protocol::Hash(rand::random()));
-					let mut request = RouteMixReq {
-						version: mwixnet_protocol::MWIXNET_PROTOCOL_VERSION,
-						msg_type: mwixnet_protocol::MwixnetType::MixReq,
-						route_id: route.route_id,
-						manifest_sequence: route.manifest_sequence,
-						batch_id,
-						onions: onions.clone(),
-						sig: dalek::sign(&self.server_config.key, &[])
-							.map_err(|error| SwapError::UnknownError(error.to_string()))?,
-					};
-					request.sig = dalek::sign(&self.server_config.key, &request.hash().0)
-						.map_err(|error| SwapError::UnknownError(error.to_string()))?;
-					let request_hash = request.hash();
+					let request_hash = RouteMixReq::signing_hash(
+						&route.route_id,
+						route.manifest_sequence,
+						&batch_id,
+						&onions,
+					);
 					for (position, swap) in swaps.iter_mut().enumerate() {
 						let metadata = swap.route.as_mut().unwrap();
 						if metadata

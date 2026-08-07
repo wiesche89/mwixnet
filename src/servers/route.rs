@@ -2181,16 +2181,20 @@ mod tests {
 		route.state = RouteState::Draining;
 		route.manifest.valid_until = now - 1;
 		mixer.store.lock().await.save_route(&route).unwrap();
-		let mut request = RouteMixReq {
+		let onions = vec![onion_test_util::rand_onion()];
+		let batch_id = Hash([9; 32]);
+		let request_hash =
+			RouteMixReq::signing_hash(&route_id, manifest.manifest_sequence, &batch_id, &onions);
+		let request = RouteMixReq {
 			version: MWIXNET_PROTOCOL_VERSION,
 			msg_type: MwixnetType::MixReq,
 			route_id,
 			manifest_sequence: manifest.manifest_sequence,
-			batch_id: Hash([9; 32]),
-			onions: vec![onion_test_util::rand_onion()],
-			sig: grin_onion::crypto::dalek::sign(&swap_config.key, &[]).unwrap(),
+			batch_id,
+			onions,
+			sig: grin_onion::crypto::dalek::sign(&swap_config.key, request_hash.as_bytes())
+				.unwrap(),
 		};
-		request.sig = grin_onion::crypto::dalek::sign(&swap_config.key, &request.hash().0).unwrap();
 		assert_eq!(
 			mixer.begin_batch(&request).await.unwrap().0,
 			swap_config.mwixnet_identity()

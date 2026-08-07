@@ -179,18 +179,23 @@ impl MixReq {
 	}
 }
 
-struct RouteMixReqPayload<'a>(&'a RouteMixReq);
+struct RouteMixReqPayload<'a> {
+	route_id: &'a mwixnet_protocol::Hash,
+	manifest_sequence: u64,
+	batch_id: &'a mwixnet_protocol::Hash,
+	onions: &'a [Onion],
+}
 
 impl Writeable for RouteMixReqPayload<'_> {
 	fn write<W: Writer>(&self, writer: &mut W) -> Result<(), ser::Error> {
-		self.0.route_id.write(writer)?;
-		writer.write_u64(self.0.manifest_sequence)?;
-		self.0.batch_id.write(writer)?;
-		if self.0.onions.is_empty() || self.0.onions.len() > mwixnet_protocol::MAX_MIX_BATCH_SIZE {
+		self.route_id.write(writer)?;
+		writer.write_u64(self.manifest_sequence)?;
+		self.batch_id.write(writer)?;
+		if self.onions.is_empty() || self.onions.len() > mwixnet_protocol::MAX_MIX_BATCH_SIZE {
 			return Err(ser::Error::CountError);
 		}
-		writer.write_u16(self.0.onions.len() as u16)?;
-		for onion in &self.0.onions {
+		writer.write_u16(self.onions.len() as u16)?;
+		for onion in self.onions {
 			onion.write(writer)?;
 		}
 		Ok(())
@@ -198,10 +203,30 @@ impl Writeable for RouteMixReqPayload<'_> {
 }
 
 impl RouteMixReq {
-	pub fn hash(&self) -> mwixnet_protocol::Hash {
+	/// Return the hash to sign for the given route batch.
+	pub fn signing_hash(
+		route_id: &mwixnet_protocol::Hash,
+		manifest_sequence: u64,
+		batch_id: &mwixnet_protocol::Hash,
+		onions: &[Onion],
+	) -> mwixnet_protocol::Hash {
 		mwixnet_protocol::hash(
 			mwixnet_protocol::MwixnetType::MixReq,
-			&RouteMixReqPayload(self),
+			&RouteMixReqPayload {
+				route_id,
+				manifest_sequence,
+				batch_id,
+				onions,
+			},
+		)
+	}
+
+	pub fn hash(&self) -> mwixnet_protocol::Hash {
+		Self::signing_hash(
+			&self.route_id,
+			self.manifest_sequence,
+			&self.batch_id,
+			&self.onions,
 		)
 	}
 }
@@ -215,7 +240,13 @@ impl Writeable for RouteMixReq {
 		}
 		writer.write_u32(self.version)?;
 		writer.write_u8(self.msg_type as u8)?;
-		RouteMixReqPayload(self).write(writer)?;
+		RouteMixReqPayload {
+			route_id: &self.route_id,
+			manifest_sequence: self.manifest_sequence,
+			batch_id: &self.batch_id,
+			onions: &self.onions,
+		}
+		.write(writer)?;
 		writer.write_fixed_bytes(self.sig.as_ref().to_bytes())
 	}
 }
@@ -588,9 +619,17 @@ mod tests {
 		let request = vectors.request.value;
 		assert_eq!(
 			vectors.request.signed_payload_binary,
-			ser::ser_vec(&RouteMixReqPayload(&request), ProtocolVersion::local())
-				.unwrap()
-				.to_hex()
+			ser::ser_vec(
+				&RouteMixReqPayload {
+					route_id: &request.route_id,
+					manifest_sequence: request.manifest_sequence,
+					batch_id: &request.batch_id,
+					onions: &request.onions,
+				},
+				ProtocolVersion::local(),
+			)
+			.unwrap()
+			.to_hex()
 		);
 		assert_eq!(
 			vectors.request.binary,
@@ -599,6 +638,15 @@ mod tests {
 				.to_hex()
 		);
 		assert_eq!(vectors.request.hash, request.hash().0.to_hex());
+		assert_eq!(
+			request.hash(),
+			RouteMixReq::signing_hash(
+				&request.route_id,
+				request.manifest_sequence,
+				&request.batch_id,
+				&request.onions,
+			)
+		);
 		let identity = dalek::DalekPublicKey::from_hex(&vectors.request.signing_identity).unwrap();
 		request
 			.sig
