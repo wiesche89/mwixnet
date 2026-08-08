@@ -33,6 +33,13 @@ use secp256k1zkp::SecretKey;
 use crate::config::ServerConfig;
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
+const MIN_CIRCUIT_TIMEOUT_MS: i32 = 2_000;
+
+fn set_timeout_floor(config: &mut TorClientConfigBuilder) {
+	config
+		.override_net_params()
+		.insert("cbtmintimeout".into(), MIN_CIRCUIT_TIMEOUT_MS);
+}
 
 /// Tor error types
 #[derive(Error, Debug)]
@@ -96,6 +103,7 @@ where
 		.map_err(|error| TorError::RequestError(format!("Invalid Onion nickname: {error}")))?;
 	let mut client_config_builder =
 		TorClientConfigBuilder::from_directories(state_dir.clone(), cache_dir.clone());
+	set_timeout_floor(&mut client_config_builder);
 	client_config_builder
 		.address_filter()
 		.allow_onion_addrs(true);
@@ -220,33 +228,36 @@ where
 		.spawn(async move {
 			let mut previous = None;
 			while let Some(status) = statuses.next().await {
-				let snapshot = format!("{status:?}");
-				if previous.as_ref() == Some(&snapshot) {
+				let state = status.state();
+				debug!("Onion service status at http://{onion_address}.onion: {status:?}");
+				if previous == Some(state) {
 					continue;
 				}
-				previous = Some(snapshot);
-				match status.state() {
+				previous = Some(state);
+				match state {
 					OnionServiceState::Running => {
 						info!("Onion service is reachable at http://{onion_address}.onion")
 					}
 					OnionServiceState::DegradedReachable => warn!(
-						"Onion service is reachable but degraded at http://{onion_address}.onion: {status:?}"
+						"Onion service is reachable but degraded at http://{onion_address}.onion"
 					),
 					OnionServiceState::Bootstrapping => {
 						info!("Onion service is bootstrapping at http://{onion_address}.onion")
 					}
 					OnionServiceState::Recovering | OnionServiceState::DegradedUnreachable => {
 						warn!(
-						"Onion service is not fully reachable at http://{onion_address}.onion: {status:?}"
-					)
+							"Onion service is not fully reachable ({state:?}) at http://{onion_address}.onion"
+						)
 					}
-					OnionServiceState::Broken => error!(
-						"Onion service is broken at http://{onion_address}.onion: {status:?}"
-					),
+					OnionServiceState::Broken => {
+						error!("Onion service is broken at http://{onion_address}.onion")
+					}
 					OnionServiceState::Shutdown => {
 						info!("Onion service stopped at http://{onion_address}.onion")
 					}
-					_ => warn!("Onion service status changed: {status:?}"),
+					_ => warn!(
+						"Onion service status changed to {state:?} at http://{onion_address}.onion"
+					),
 				}
 			}
 		})
@@ -396,4 +407,20 @@ async fn async_post_with_timeout<R: Runtime>(
 		})
 		.await
 		.map_err(|_| TorError::RequestTimeout)?
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn timeout_floor() {
+		let mut config = TorClientConfigBuilder::default();
+		set_timeout_floor(&mut config);
+
+		assert_eq!(
+			config.override_net_params().get("cbtmintimeout"),
+			Some(&MIN_CIRCUIT_TIMEOUT_MS)
+		);
+	}
 }
