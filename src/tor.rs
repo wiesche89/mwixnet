@@ -19,7 +19,7 @@ use tor_hsrproxy::config::{
 };
 use tor_hsrproxy::OnionServiceReverseProxy;
 use tor_hsservice::config::OnionServiceConfigBuilder;
-use tor_hsservice::status::State as OnionServiceState;
+use tor_hsservice::status::{Problem as OnionServiceProblem, State as OnionServiceState};
 use tor_hsservice::{
 	HsId, HsIdKeypairSpecifier, HsIdPublicKeySpecifier, HsNickname, RunningOnionService,
 };
@@ -230,31 +230,47 @@ where
 			let mut has_reached_running = false;
 			while let Some(status) = statuses.next().await {
 				let state = status.state();
+				let problem = status.current_problem().and_then(onion_service_problem);
 				debug!("Onion service status at http://{onion_address}.onion: {status:?}");
-				if previous == Some(state) {
+				if previous == Some((state, problem)) {
 					continue;
 				}
-				previous = Some(state);
+				previous = Some((state, problem));
 				match state {
 					OnionServiceState::Running => {
 						has_reached_running = true;
 						info!("Onion service is reachable at http://{onion_address}.onion")
 					}
-					OnionServiceState::DegradedReachable => warn!(
-						"Onion service is reachable but degraded at http://{onion_address}.onion"
-					),
+					OnionServiceState::DegradedReachable => match problem {
+						Some(problem) => warn!(
+							"Onion service is reachable but degraded ({problem}) at http://{onion_address}.onion"
+						),
+						None => warn!(
+							"Onion service is reachable but degraded at http://{onion_address}.onion"
+						),
+					},
 					OnionServiceState::Bootstrapping if !has_reached_running => {
 						info!("Onion service is bootstrapping at http://{onion_address}.onion")
 					}
 					// Arti also uses Bootstrapping while refreshing a running service's
 					// descriptor, so avoid implying that the process restarted.
-					OnionServiceState::Bootstrapping => info!(
-						"Onion service status changed to Bootstrapping at http://{onion_address}.onion"
-					),
+					OnionServiceState::Bootstrapping => match problem {
+						Some(problem) => warn!(
+							"Onion service status changed to Bootstrapping ({problem}) at http://{onion_address}.onion"
+						),
+						None => info!(
+							"Onion service status changed to Bootstrapping (no problem reported) at http://{onion_address}.onion"
+						),
+					},
 					OnionServiceState::Recovering | OnionServiceState::DegradedUnreachable => {
-						warn!(
-							"Onion service is not fully reachable ({state:?}) at http://{onion_address}.onion"
-						)
+						match problem {
+							Some(problem) => warn!(
+								"Onion service is not fully reachable ({state:?}, {problem}) at http://{onion_address}.onion"
+							),
+							None => warn!(
+								"Onion service is not fully reachable ({state:?}) at http://{onion_address}.onion"
+							),
+						}
 					}
 					OnionServiceState::Broken => {
 						error!("Onion service is broken at http://{onion_address}.onion")
@@ -272,6 +288,20 @@ where
 			TorError::RequestError(format!("Could not monitor Onion service: {error}"))
 		})?;
 	Ok(())
+}
+
+fn onion_service_problem(problem: &OnionServiceProblem) -> Option<&'static str> {
+	match problem {
+		OnionServiceProblem::Runtime(_) => Some("runtime problem"),
+		OnionServiceProblem::DescriptorUpload(errors) if !errors.is_empty() => {
+			Some("descriptor upload problem")
+		}
+		OnionServiceProblem::Ipt(errors) if !errors.is_empty() => {
+			Some("introduction point problem")
+		}
+		OnionServiceProblem::DescriptorUpload(_) | OnionServiceProblem::Ipt(_) => None,
+		_ => Some("unknown problem"),
+	}
 }
 
 // TODO: Add proper error handling
