@@ -227,6 +227,7 @@ where
 	runtime
 		.spawn(async move {
 			let mut previous = None;
+			let mut has_reached_running = false;
 			while let Some(status) = statuses.next().await {
 				let state = status.state();
 				debug!("Onion service status at http://{onion_address}.onion: {status:?}");
@@ -236,14 +237,20 @@ where
 				previous = Some(state);
 				match state {
 					OnionServiceState::Running => {
+						has_reached_running = true;
 						info!("Onion service is reachable at http://{onion_address}.onion")
 					}
 					OnionServiceState::DegradedReachable => warn!(
 						"Onion service is reachable but degraded at http://{onion_address}.onion"
 					),
-					OnionServiceState::Bootstrapping => {
+					OnionServiceState::Bootstrapping if !has_reached_running => {
 						info!("Onion service is bootstrapping at http://{onion_address}.onion")
 					}
+					// Arti also uses Bootstrapping while refreshing a running service's
+					// descriptor, so avoid implying that the process restarted.
+					OnionServiceState::Bootstrapping => info!(
+						"Onion service status changed to Bootstrapping at http://{onion_address}.onion"
+					),
 					OnionServiceState::Recovering | OnionServiceState::DegradedUnreachable => {
 						warn!(
 							"Onion service is not fully reachable ({state:?}) at http://{onion_address}.onion"
