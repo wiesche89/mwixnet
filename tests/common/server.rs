@@ -96,6 +96,7 @@ where
 		wallet_owner_url: wallet.lock().owner_address().to_string(),
 		wallet_owner_secret_path: None,
 		collect_fees: true,
+		min_circuit_timeout_ms: mwixnet::config::DEFAULT_MIN_CIRCUIT_TIMEOUT_MS,
 		prev_server: None,
 		next_server: match next_server {
 			Some(s) => Some(DalekPublicKey::from_secret(&s.server_key)),
@@ -162,6 +163,7 @@ where
 		wallet_owner_url: wallet.lock().owner_address().to_string(),
 		wallet_owner_secret_path: None,
 		collect_fees: true,
+		min_circuit_timeout_ms: mwixnet::config::DEFAULT_MIN_CIRCUIT_TIMEOUT_MS,
 		prev_server: Some(prev_server),
 		next_server: match next_server {
 			Some(s) => Some(DalekPublicKey::from_secret(&s.server_key)),

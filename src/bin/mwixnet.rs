@@ -146,6 +146,7 @@ fn real_main() -> Result<(), Box<dyn std::error::Error>> {
 					.map(|p| p.to_owned()),
 			},
 			collect_fees: !no_fee_collection,
+			min_circuit_timeout_ms: config::DEFAULT_MIN_CIRCUIT_TIMEOUT_MS,
 			prev_server,
 			next_server,
 		};

@@ -150,6 +150,7 @@ mod tests {
 			wallet_owner_url: "127.0.0.1:3420".parse()?,
 			wallet_owner_secret_path: None,
 			collect_fees: true,
+			min_circuit_timeout_ms: crate::config::DEFAULT_MIN_CIRCUIT_TIMEOUT_MS,
 			prev_server: None,
 			next_server: None,
 		};

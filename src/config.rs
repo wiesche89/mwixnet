@@ -20,10 +20,16 @@ use grin_wallet_libwallet::mwixnet::{onion as grin_onion, MwixnetServerPublicKey
 const GRIN_HOME: &str = ".grin";
 const NODE_FOREIGN_API_SECRET_FILE_NAME: &str = ".foreign_api_secret";
 const WALLET_OWNER_API_SECRET_FILE_NAME: &str = ".owner_api_secret";
+/// Default minimum Tor circuit build timeout in milliseconds.
+pub const DEFAULT_MIN_CIRCUIT_TIMEOUT_MS: i32 = 2_000;
 const CONFIG_HEADER: &str = "\
 # MWixnet server configuration
 # Wallet clients use the ordered X25519 onion keys printed at server startup.
 ";
+
+fn default_min_circuit_timeout_ms() -> i32 {
+	DEFAULT_MIN_CIRCUIT_TIMEOUT_MS
+}
 
 /// The decrypted server config to be passed around and used by the rest of the mwixnet code
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -44,6 +50,9 @@ pub struct ServerConfig {
 	pub wallet_owner_secret_path: Option<String>,
 	/// whether to collect excess hop fees in the server wallet
 	pub collect_fees: bool,
+	/// minimum Tor circuit build timeout in milliseconds
+	#[serde(default = "default_min_circuit_timeout_ms")]
+	pub min_circuit_timeout_ms: i32,
 	/// Ed25519 identity key of the previous mix/swap server (e.g. N_1 if this is N_2)
 	#[serde(with = "grin_onion::crypto::dalek::option_dalek_pubkey_serde", default)]
 	pub prev_server: Option<DalekPublicKey>,
@@ -196,6 +205,8 @@ struct RawConfig {
 	wallet_owner_url: String,
 	wallet_owner_secret_path: Option<String>,
 	collect_fees: bool,
+	#[serde(default = "default_min_circuit_timeout_ms")]
+	min_circuit_timeout_ms: i32,
 	#[serde(with = "grin_onion::crypto::dalek::option_dalek_pubkey_serde", default)]
 	prev_server: Option<DalekPublicKey>,
 	#[serde(with = "grin_onion::crypto::dalek::option_dalek_pubkey_serde", default)]
@@ -216,6 +227,7 @@ fn config_comment(key: &str) -> Option<&'static str> {
 		"collect_fees" => {
 			Some("Collect excess hop fees in the wallet; false pays all hop fees to miners.")
 		}
+		"min_circuit_timeout_ms" => Some("Minimum Tor circuit build timeout in milliseconds."),
 		"prev_server" => {
 			Some("Previous server Ed25519 identity key; setting it makes this server a mixer.")
 		}
@@ -273,6 +285,7 @@ pub fn write_config(
 		wallet_owner_url: server_config.wallet_owner_url.clone(),
 		wallet_owner_secret_path: server_config.wallet_owner_secret_path.clone(),
 		collect_fees: server_config.collect_fees,
+		min_circuit_timeout_ms: server_config.min_circuit_timeout_ms,
 		prev_server: server_config.prev_server.clone(),
 		next_server: server_config.next_server.clone(),
 	};
@@ -309,6 +322,7 @@ pub fn load_config(
 		wallet_owner_url: raw_config.wallet_owner_url,
 		wallet_owner_secret_path: raw_config.wallet_owner_secret_path,
 		collect_fees: raw_config.collect_fees,
+		min_circuit_timeout_ms: raw_config.min_circuit_timeout_ms,
 		prev_server: raw_config.prev_server,
 		next_server: raw_config.next_server,
 	})
@@ -353,7 +367,7 @@ pub mod test_util {
 	use grin_onion::crypto::dalek::DalekPublicKey;
 	use secp256k1zkp::SecretKey;
 
-	use crate::config::ServerConfig;
+	use crate::config::{ServerConfig, DEFAULT_MIN_CIRCUIT_TIMEOUT_MS};
 
 	pub fn local_config(
 		server_key: &SecretKey,
@@ -369,6 +383,7 @@ pub mod test_util {
 			wallet_owner_url: "127.0.0.1:3420".parse()?,
 			wallet_owner_secret_path: None,
 			collect_fees: true,
+			min_circuit_timeout_ms: DEFAULT_MIN_CIRCUIT_TIMEOUT_MS,
 			prev_server: prev_server.clone(),
 			next_server: next_server.clone(),
 		};
@@ -436,6 +451,12 @@ mod tests {
 		write_config(&path, &config, &password).unwrap();
 		let contents = std::fs::read_to_string(&path).unwrap();
 		let loaded = load_config(&path, &password).unwrap();
+		std::fs::write(
+			&path,
+			contents.replace("min_circuit_timeout_ms = 2000\n", ""),
+		)
+		.unwrap();
+		let legacy_loaded = load_config(&path, &password).unwrap();
 		std::fs::remove_file(path).unwrap();
 
 		assert!(contents.contains("# Seconds between mixing rounds.\ninterval_s ="));
@@ -444,11 +465,18 @@ mod tests {
 			"# Collect excess hop fees in the wallet; false pays all hop fees to miners.\ncollect_fees ="
 		));
 		assert!(contents.contains(
+			"# Minimum Tor circuit build timeout in milliseconds.\nmin_circuit_timeout_ms = 2000"
+		));
+		assert!(contents.contains(
 			"# Previous server Ed25519 identity key; setting it makes this server a mixer.\n# prev_server ="
 		));
 		assert!(contents.contains(
 			"# Next server Ed25519 identity key; leave unset for the final hop.\n# next_server ="
 		));
 		assert_eq!(loaded, config);
+		assert_eq!(
+			legacy_loaded.min_circuit_timeout_ms,
+			DEFAULT_MIN_CIRCUIT_TIMEOUT_MS
+		);
 	}
 }

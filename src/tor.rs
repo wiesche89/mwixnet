@@ -33,12 +33,11 @@ use secp256k1zkp::SecretKey;
 use crate::config::ServerConfig;
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
-const MIN_CIRCUIT_TIMEOUT_MS: i32 = 2_000;
 
-fn set_timeout_floor(config: &mut TorClientConfigBuilder) {
+fn set_timeout_floor(config: &mut TorClientConfigBuilder, timeout_ms: i32) {
 	config
 		.override_net_params()
-		.insert("cbtmintimeout".into(), MIN_CIRCUIT_TIMEOUT_MS);
+		.insert("cbtmintimeout".into(), timeout_ms);
 }
 
 /// Tor error types
@@ -103,7 +102,10 @@ where
 		.map_err(|error| TorError::RequestError(format!("Invalid Onion nickname: {error}")))?;
 	let mut client_config_builder =
 		TorClientConfigBuilder::from_directories(state_dir.clone(), cache_dir.clone());
-	set_timeout_floor(&mut client_config_builder);
+	set_timeout_floor(
+		&mut client_config_builder,
+		server_config.min_circuit_timeout_ms,
+	);
 	client_config_builder
 		.address_filter()
 		.allow_onion_addrs(true);
@@ -453,11 +455,11 @@ mod tests {
 	#[test]
 	fn timeout_floor() {
 		let mut config = TorClientConfigBuilder::default();
-		set_timeout_floor(&mut config);
+		set_timeout_floor(&mut config, 1_234);
 
 		assert_eq!(
 			config.override_net_params().get("cbtmintimeout"),
-			Some(&MIN_CIRCUIT_TIMEOUT_MS)
+			Some(&1_234)
 		);
 	}
 }
