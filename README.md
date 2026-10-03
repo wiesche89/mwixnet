@@ -27,6 +27,20 @@ With a fully synced node and, when collecting fees, a wallet listening at the co
 `mwixnet pubkey` outputs the server's Ed25519 identity key used to configure adjacent servers.
 `mwixnet onion-pubkey` outputs the server's X25519 onion encryption key that clients provide to their wallets when creating mwixnet requests.
 
+#### Monitor
+
+Check onion reachability every two minutes and log response times
+
+```sh
+cargo run --release --bin mwixnet-monitor -- \
+  --data-dir "$HOME/.local/share/mwixnet-monitor" \
+  swap=mza3u6vkqodqc6kjjapfbcjrg7hgpkuw6nyq5xvfjqp5jm2lfeaocwqd.onion \
+  mixer=56bkem4ly7oebmtw7y5d25veoi4t47txqvxlptsy7kctsfid6ekgsuqd.onion
+```
+
+Use a separate data directory from the servers
+Add `--once` to check once and exit — a failed check returns a nonzero exit code
+
 #### Wallet workflow
 
 1. Collect each server's X25519 onion key in route order.

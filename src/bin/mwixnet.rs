@@ -415,7 +415,7 @@ fn real_main() -> Result<(), Box<dyn std::error::Error>> {
 									*prev_tx_clone.lock().unwrap() = Some(tx);
 								}
 								Ok(None) => {}
-								Err(e) => eprintln!("Swap round failed: {}", e),
+								Err(e) => log::error!("Swap round failed: {}", e),
 							}
 						}
 					});

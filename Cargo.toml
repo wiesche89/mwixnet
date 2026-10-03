@@ -1,5 +1,6 @@
 [package]
 name = "mwixnet"
+default-run = "mwixnet"
 version = "0.1.0"
 edition = "2021"
 

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use arti_client::config::TorClientConfigBuilder;
 use arti_client::{TorClient, TorClientConfig};
@@ -217,6 +217,70 @@ where
 	Ok((service, proxy, worker))
 }
 
+const STATUS_WARNING_DELAY: Duration = Duration::from_secs(120);
+const STATUS_WARNING_INTERVAL: Duration = Duration::from_secs(600);
+
+#[derive(Default)]
+struct StatusLog {
+	since: Option<Instant>,
+	last_warning: Option<Instant>,
+	problem: Option<String>,
+	broken: bool,
+}
+
+impl StatusLog {
+	fn update(
+		&mut self,
+		state: OnionServiceState,
+		problem: Option<String>,
+		now: Instant,
+	) -> Option<(log::Level, Duration)> {
+		if matches!(
+			state,
+			OnionServiceState::Running | OnionServiceState::Shutdown
+		) {
+			let recovery = self
+				.last_warning
+				.and_then(|_| self.since)
+				.filter(|_| state == OnionServiceState::Running)
+				.map(|since| (log::Level::Info, now.duration_since(since)));
+			*self = Self::default();
+			return recovery;
+		}
+		if let Some(problem) = problem {
+			self.problem = Some(problem);
+		}
+		// Ignore normal descriptor refreshes
+		if state == OnionServiceState::Bootstrapping
+			&& self.problem.is_none()
+			&& self.since.is_none()
+		{
+			return None;
+		}
+		let elapsed = now.duration_since(*self.since.get_or_insert(now));
+		let broken = state == OnionServiceState::Broken;
+		let report = (broken && !self.broken)
+			|| match self.last_warning {
+				Some(last) => now.duration_since(last) >= STATUS_WARNING_INTERVAL,
+				None => elapsed >= STATUS_WARNING_DELAY,
+			};
+		self.broken = broken;
+		if report {
+			self.last_warning = Some(now);
+			Some((
+				if broken {
+					log::Level::Error
+				} else {
+					log::Level::Warn
+				},
+				elapsed,
+			))
+		} else {
+			None
+		}
+	}
+}
+
 fn spawn_status_logger<R>(
 	runtime: &R,
 	service: &RunningOnionService,
@@ -226,63 +290,30 @@ where
 	R: Runtime,
 {
 	let mut statuses = service.status_events();
+	let mut status = service.status();
+	let timer = runtime.clone();
 	runtime
 		.spawn(async move {
-			let mut previous = None;
-			let mut has_reached_running = false;
-			while let Some(status) = statuses.next().await {
+			let mut monitor = StatusLog::default();
+			loop {
 				let state = status.state();
 				let problem = status.current_problem().and_then(onion_service_problem);
-				debug!("Onion service status at http://{onion_address}.onion: {status:?}");
-				if previous == Some((state, problem)) {
-					continue;
+				if let Some((level, elapsed)) = monitor.update(state, problem, Instant::now()) {
+					if level == log::Level::Info {
+						info!("Onion service recovered after {}s at http://{onion_address}.onion", elapsed.as_secs());
+					} else {
+						log::log!(level, "Onion service reports {state:?} after {}s of problems at http://{onion_address}.onion; latest problem: {}",
+							elapsed.as_secs(), monitor.problem.as_deref().unwrap_or("no details reported"));
+					}
 				}
-				previous = Some((state, problem));
-				match state {
-					OnionServiceState::Running => {
-						has_reached_running = true;
-						info!("Onion service is reachable at http://{onion_address}.onion")
+				// Keep checking while the status stays unchanged
+				match timer.timeout(Duration::from_secs(30), statuses.next()).await {
+					Ok(Some(next)) => {
+						debug!("Onion service status at http://{onion_address}.onion: {next:?}");
+						status = next;
 					}
-					OnionServiceState::DegradedReachable => match problem {
-						Some(problem) => warn!(
-							"Onion service is reachable but degraded ({problem}) at http://{onion_address}.onion"
-						),
-						None => warn!(
-							"Onion service is reachable but degraded at http://{onion_address}.onion"
-						),
-					},
-					OnionServiceState::Bootstrapping if !has_reached_running => {
-						info!("Onion service is bootstrapping at http://{onion_address}.onion")
-					}
-					// Arti also uses Bootstrapping while refreshing a running service's
-					// descriptor, so avoid implying that the process restarted.
-					OnionServiceState::Bootstrapping => match problem {
-						Some(problem) => warn!(
-							"Onion service status changed to Bootstrapping ({problem}) at http://{onion_address}.onion"
-						),
-						None => info!(
-							"Onion service status changed to Bootstrapping (no problem reported) at http://{onion_address}.onion"
-						),
-					},
-					OnionServiceState::Recovering | OnionServiceState::DegradedUnreachable => {
-						match problem {
-							Some(problem) => warn!(
-								"Onion service is not fully reachable ({state:?}, {problem}) at http://{onion_address}.onion"
-							),
-							None => warn!(
-								"Onion service is not fully reachable ({state:?}) at http://{onion_address}.onion"
-							),
-						}
-					}
-					OnionServiceState::Broken => {
-						error!("Onion service is broken at http://{onion_address}.onion")
-					}
-					OnionServiceState::Shutdown => {
-						info!("Onion service stopped at http://{onion_address}.onion")
-					}
-					_ => warn!(
-						"Onion service status changed to {state:?} at http://{onion_address}.onion"
-					),
+					Ok(None) => break,
+					Err(_) => {}
 				}
 			}
 		})
@@ -292,17 +323,11 @@ where
 	Ok(())
 }
 
-fn onion_service_problem(problem: &OnionServiceProblem) -> Option<&'static str> {
+fn onion_service_problem(problem: &OnionServiceProblem) -> Option<String> {
 	match problem {
-		OnionServiceProblem::Runtime(_) => Some("runtime problem"),
-		OnionServiceProblem::DescriptorUpload(errors) if !errors.is_empty() => {
-			Some("descriptor upload problem")
-		}
-		OnionServiceProblem::Ipt(errors) if !errors.is_empty() => {
-			Some("introduction point problem")
-		}
-		OnionServiceProblem::DescriptorUpload(_) | OnionServiceProblem::Ipt(_) => None,
-		_ => Some("unknown problem"),
+		OnionServiceProblem::DescriptorUpload(errors) if errors.is_empty() => None,
+		OnionServiceProblem::Ipt(errors) if errors.is_empty() => None,
+		_ => Some(format!("{problem:?}")),
 	}
 }
 
@@ -451,6 +476,93 @@ async fn async_post_with_timeout<R: Runtime>(
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use OnionServiceState::{
+		Bootstrapping, Broken, DegradedReachable, DegradedUnreachable, Recovering, Running,
+		Shutdown,
+	};
+
+	#[test]
+	fn brief_problem() {
+		let mut monitor = StatusLog::default();
+		let now = Instant::now();
+		assert_eq!(monitor.update(Bootstrapping, None, now), None);
+		assert_eq!(monitor.update(Running, None, now), None);
+		assert_eq!(
+			monitor.update(DegradedReachable, Some("upload timeout".into()), now),
+			None
+		);
+		assert_eq!(
+			monitor.update(Running, None, now + Duration::from_secs(60)),
+			None
+		);
+		assert!(monitor.problem.is_none());
+	}
+
+	#[test]
+	fn warning_and_recovery() {
+		let mut monitor = StatusLog::default();
+		let now = Instant::now();
+		let state = DegradedUnreachable;
+		assert_eq!(
+			monitor.update(state, Some("upload timeout".into()), now),
+			None
+		);
+		// Keep the timer across retries
+		assert_eq!(
+			monitor.update(Bootstrapping, None, now + Duration::from_secs(60)),
+			None
+		);
+		assert_eq!(
+			monitor.update(state, None, now + STATUS_WARNING_DELAY),
+			Some((log::Level::Warn, STATUS_WARNING_DELAY))
+		);
+		assert_eq!(monitor.problem.as_deref(), Some("upload timeout"));
+		assert_eq!(
+			monitor.update(state, None, now + Duration::from_secs(150)),
+			None
+		);
+		let repeat = STATUS_WARNING_DELAY + STATUS_WARNING_INTERVAL;
+		assert_eq!(
+			monitor.update(state, None, now + repeat),
+			Some((log::Level::Warn, repeat))
+		);
+		assert_eq!(
+			monitor.update(Running, None, now + repeat),
+			Some((log::Level::Info, repeat))
+		);
+		assert_eq!(monitor.update(Running, None, now + repeat), None);
+	}
+
+	#[test]
+	fn broken_and_shutdown() {
+		let mut monitor = StatusLog::default();
+		let now = Instant::now();
+		assert_eq!(monitor.update(Recovering, None, now), None);
+		assert_eq!(
+			monitor.update(Broken, Some("runtime failure".into()), now),
+			Some((log::Level::Error, Duration::ZERO))
+		);
+		assert_eq!(monitor.update(Broken, None, now), None);
+		assert_eq!(monitor.update(Shutdown, None, now), None);
+		assert!(monitor.since.is_none());
+	}
+
+	#[test]
+	fn retry_without_details() {
+		let mut monitor = StatusLog::default();
+		let now = Instant::now();
+		assert_eq!(monitor.update(Recovering, None, now), None);
+		assert_eq!(
+			monitor.update(Bootstrapping, None, now + STATUS_WARNING_DELAY),
+			Some((log::Level::Warn, STATUS_WARNING_DELAY))
+		);
+	}
+
+	#[test]
+	fn empty_errors() {
+		assert!(onion_service_problem(&OnionServiceProblem::DescriptorUpload(vec![])).is_none());
+		assert!(onion_service_problem(&OnionServiceProblem::Ipt(vec![])).is_none());
+	}
 
 	#[test]
 	fn timeout_floor() {
