@@ -1,0 +1,50 @@
+name: Continuous Integration
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  linux-tests:
+    name: Linux Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Tests
+        run: |
+          cargo test --release --locked --lib --bins
+          cargo test --release --locked --doc
+
+  macos-tests:
+    name: macOS Tests
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Tests
+        run: |
+          cargo test --release --locked --lib --bins
+          cargo test --release --locked --doc
+
+  windows-tests:
+    name: Windows Tests
+    runs-on: windows-2022
+    env:
+      ROARING_ARCH: x86-64-v2
+    steps:
+      - uses: actions/checkout@v6
+      - name: Unit tests
+        run: cargo test --release --locked --lib --bins
+      - name: Doc tests
+        run: cargo test --release --locked --doc
+
+  e2e-tests:
+    name: Linux E2E Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build tests
+        run: cargo test --release --locked --test e2e --no-run
+      - name: Tests
+        timeout-minutes: 10
+        run: cargo test --release --locked --test e2e
