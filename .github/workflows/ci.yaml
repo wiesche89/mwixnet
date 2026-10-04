@@ -5,6 +5,17 @@ permissions:
   contents: read
 
 jobs:
+  clippy:
+    name: Cargo clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: rustup toolchain install 1.99.0 --profile minimal --component clippy --component rustfmt
+      - name: Format
+        run: cargo +1.99.0 fmt --all -- --check
+      - name: Clippy
+        run: cargo +1.99.0 clippy --workspace --all-targets --locked -- -D warnings
+
   linux-tests:
     name: Linux Tests
     runs-on: ubuntu-latest
