@@ -1,6 +1,7 @@
 use std::iter;
 use std::net::TcpListener;
 use std::sync::Arc;
+use std::time::Duration;
 
 use grin_api::{client, json_rpc};
 use grin_core::core::Transaction;
@@ -216,7 +217,7 @@ impl Servers {
 				.take(num_mixers + 1)
 				.collect();
 
-		// Setup mock tor network
+		// Connect to the Tor network
 		let tor_runtime = PreferredRuntime::current().unwrap();
 
 		// Build mixers in reverse order
@@ -261,7 +262,43 @@ impl Servers {
 			DalekPublicKey::from_secret(&server_keys[0]).to_hex()
 		);
 
-		Servers { swapper, mixers }
+		let servers = Servers { swapper, mixers };
+		servers.wait_for_mixers().await;
+		servers
+	}
+
+	async fn wait_for_mixers(&self) {
+		for (i, mixer) in self.mixers.iter().enumerate() {
+			let tor = if i == 0 {
+				&self.swapper.tor_instance
+			} else {
+				&self.mixers[i - 1].tor_instance
+			};
+			let client = tor.lock().client().expect("Tor client is running");
+			let address = grin_wallet_util::OnionV3Address::from_bytes(
+				DalekPublicKey::from_secret(&mixer.server_key)
+					.as_ref()
+					.to_bytes(),
+			);
+			let url = format!("{}/v1", address.to_http_str());
+			let request = json!({"jsonrpc": "2.0", "id": 1, "method": "health", "params": []});
+			tokio::time::timeout(Duration::from_secs(180), async {
+				loop {
+					match tor::async_post(client.clone(), &url, request.to_string()).await {
+						Ok(body) => {
+							let response: serde_json::Value =
+								serde_json::from_str(&body).expect("valid mixer health response");
+							assert_eq!(response["result"], "ok", "Mixer {i}: {body}");
+							break;
+						}
+						Err(error) => eprintln!("Waiting for mixer {i}: {error}"),
+					}
+					tokio::time::sleep(Duration::from_secs(2)).await;
+				}
+			})
+			.await
+			.unwrap_or_else(|_| panic!("Mixer {i} at {url} was not reachable within 180s"));
+		}
 	}
 
 	pub fn get_server_keys(&self) -> Vec<MwixnetServerPublicKey> {
