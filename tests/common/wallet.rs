@@ -64,11 +64,13 @@ impl IntegrationGrinWallet {
 		// Wallet LifeCycle Provider provides all functions init wallet and work with seeds, etc...
 		let lc = wallet.lc_provider().unwrap();
 
-		let mut wallet_config = WalletConfig::default();
-		wallet_config.check_node_api_http_addr = node_api.clone();
-		wallet_config.owner_api_listen_port = Some(api_listen_port);
-		wallet_config.api_secret_path = None;
-		wallet_config.data_file_dir = wallet_dir.clone();
+		let wallet_config = WalletConfig {
+			check_node_api_http_addr: node_api.clone(),
+			owner_api_listen_port: Some(api_listen_port),
+			api_secret_path: None,
+			data_file_dir: wallet_dir.clone(),
+			..Default::default()
+		};
 
 		// The top level wallet directory should be set manually (in the reference implementation,
 		// this is provided in the WalletConfig)
@@ -319,7 +321,7 @@ pub struct GrinWalletManager {
 	// base directory for the server instance
 	working_dir: String,
 
-	wallets: Vec<Arc<Mutex<IntegrationGrinWallet>>>,
+	wallets: Vec<Arc<IntegrationGrinWallet>>,
 }
 
 impl GrinWalletManager {
@@ -333,16 +335,16 @@ impl GrinWalletManager {
 	pub async fn async_new_wallet(
 		&mut self,
 		node_api_addr: &SocketAddr,
-	) -> Arc<Mutex<IntegrationGrinWallet>> {
+	) -> Arc<IntegrationGrinWallet> {
 		let wallet_dir = format!("{}/wallets/{}", self.working_dir, self.wallets.len());
-		let wallet = Arc::new(Mutex::new(
+		let wallet = Arc::new(
 			IntegrationGrinWallet::async_new_wallet(
 				wallet_dir,
 				21000 + self.wallets.len() as u16,
 				format!("http://{}", node_api_addr),
 			)
 			.await,
-		));
+		);
 		self.wallets.push(wallet.clone());
 		wallet
 	}

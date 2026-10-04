@@ -95,8 +95,8 @@ where
 {
 	info!("Initializing Tor client");
 
-	let state_dir = format!("{}/tor/state", &data_dir);
-	let cache_dir = format!("{}/tor/cache", &data_dir);
+	let state_dir = format!("{}/tor/state", data_dir);
+	let cache_dir = format!("{}/tor/cache", data_dir);
 	let onion_address = server_config.onion_address().to_string();
 	let hs_nickname = HsNickname::new(onion_address.clone())
 		.map_err(|error| TorError::RequestError(format!("Invalid Onion nickname: {error}")))?;
@@ -241,7 +241,7 @@ impl StatusLog {
 		) {
 			let recovery = self
 				.last_warning
-				.and_then(|_| self.since)
+				.and(self.since)
 				.filter(|_| state == OnionServiceState::Running)
 				.map(|since| (log::Level::Info, now.duration_since(since)));
 			*self = Self::default();
@@ -338,7 +338,7 @@ fn add_key_to_store(
 	secret_key: &SecretKey,
 	hs_nickname: &HsNickname,
 ) -> Result<(), TorError> {
-	let key_store_dir = format!("{}/keystore", &state_dir);
+	let key_store_dir = format!("{}/keystore", state_dir);
 	let arti_store =
 		ArtiNativeKeystore::from_path_and_mistrust(&key_store_dir, tor_config.fs_mistrust())
 			.unwrap();

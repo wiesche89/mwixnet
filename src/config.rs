@@ -135,7 +135,7 @@ impl EncryptedServerKey {
 		let sealing_key: aead::LessSafeKey = aead::LessSafeKey::new(unbound_key);
 		let nonce: [u8; 12] = thread_rng().gen();
 		let aad = aead::Aad::from(&[]);
-		let _ = sealing_key
+		sealing_key
 			.seal_in_place_append_tag(
 				aead::Nonce::assume_unique_for_key(nonce),
 				aad,
@@ -179,7 +179,7 @@ impl EncryptedServerKey {
 				aad,
 				&mut encrypted_seed,
 			)
-			.map_err(|e| ConfigError::DecryptionError(e))?;
+			.map_err(ConfigError::DecryptionError)?;
 
 		for _ in 0..aead::AES_256_GCM.tag_len() {
 			encrypted_seed.pop();
@@ -272,7 +272,7 @@ pub fn write_config(
 	server_config: &ServerConfig,
 	password: &ZeroingString,
 ) -> Result<(), ConfigError> {
-	let encrypted = EncryptedServerKey::from_secret_key(&server_config.key, &password);
+	let encrypted = EncryptedServerKey::from_secret_key(&server_config.key, password);
 
 	let raw_config = RawConfig {
 		encrypted_key: encrypted.encrypted_key,
@@ -291,9 +291,9 @@ pub fn write_config(
 	};
 	let encoded = documented_config(&raw_config)?;
 
-	let mut file = File::create(config_path).map_err(|e| ConfigError::FileWriteError(e))?;
+	let mut file = File::create(config_path).map_err(ConfigError::FileWriteError)?;
 	file.write_all(encoded.as_bytes())
-		.map_err(|e| ConfigError::FileWriteError(e))?;
+		.map_err(ConfigError::FileWriteError)?;
 
 	Ok(())
 }
@@ -311,7 +311,7 @@ pub fn load_config(
 		salt: raw_config.salt,
 		nonce: raw_config.nonce,
 	};
-	let secret_key = encrypted_key.decrypt(&password)?;
+	let secret_key = encrypted_key.decrypt(password)?;
 
 	Ok(ServerConfig {
 		key: secret_key,
@@ -329,7 +329,7 @@ pub fn load_config(
 }
 
 pub fn get_grin_path(chain_type: &ChainTypes) -> PathBuf {
-	let mut grin_path = dirs::home_dir().unwrap_or_else(|| PathBuf::new());
+	let mut grin_path = dirs::home_dir().unwrap_or_default();
 	grin_path.push(GRIN_HOME);
 	grin_path.push(chain_type.shortname());
 	grin_path

@@ -46,33 +46,30 @@ pub struct TxComponents {
 /// Builds and verifies the finalized swap 'Transaction' using the provided components.
 pub async fn async_assemble_tx(
 	wallet: Option<&Arc<dyn Wallet>>,
-	inputs: &Vec<Input>,
-	outputs: &Vec<Output>,
-	kernels: &Vec<TxKernel>,
+	inputs: &[Input],
+	components: &TxComponents,
 	fee_base: u64,
 	fees_paid: u64,
-	prev_offset: &SecretKey,
-	output_excesses: &Vec<SecretKey>,
+	output_excesses: &[SecretKey],
 ) -> Result<Transaction, TxError> {
 	// calculate minimum fee required for the kernel
 	let min_kernel_fee =
-		TransactionBody::weight_by_iok(inputs.len() as u64, outputs.len() as u64, 1) * fee_base;
+		TransactionBody::weight_by_iok(inputs.len() as u64, components.outputs.len() as u64, 1)
+			* fee_base;
 
 	let components = async_add_kernel_and_collect_fees(
 		wallet,
-		&outputs,
-		&kernels,
+		components,
 		fee_base,
 		min_kernel_fee,
 		fees_paid,
-		&prev_offset,
-		&output_excesses,
+		output_excesses,
 	)
 	.await?;
 
 	// assemble the transaction
 	let tx = Transaction::new(
-		Inputs::from(inputs.as_slice()),
+		Inputs::from(inputs),
 		&components.outputs,
 		&components.kernels,
 	)
@@ -84,7 +81,7 @@ pub async fn async_assemble_tx(
 pub async fn async_assemble_components(
 	wallet: Option<&Arc<dyn Wallet>>,
 	components: &TxComponents,
-	output_excesses: &Vec<SecretKey>,
+	output_excesses: &[SecretKey],
 	fee_base: u64,
 	fees_paid: u64,
 ) -> Result<TxComponents, TxError> {
@@ -93,31 +90,27 @@ pub async fn async_assemble_components(
 
 	async_add_kernel_and_collect_fees(
 		wallet,
-		&components.outputs,
-		&components.kernels,
+		components,
 		fee_base,
 		min_kernel_fee,
 		fees_paid,
-		&components.offset,
-		&output_excesses,
+		output_excesses,
 	)
 	.await
 }
 
 async fn async_add_kernel_and_collect_fees(
 	wallet: Option<&Arc<dyn Wallet>>,
-	outputs: &Vec<Output>,
-	kernels: &Vec<TxKernel>,
+	components: &TxComponents,
 	fee_base: u64,
 	min_kernel_fee: u64,
 	fees_paid: u64,
-	prev_offset: &SecretKey,
-	output_excesses: &Vec<SecretKey>,
+	output_excesses: &[SecretKey],
 ) -> Result<TxComponents, TxError> {
 	let secp = Secp256k1::with_caps(ContextFlag::Commit);
-	let mut txn_outputs = outputs.clone();
-	let mut txn_excesses = output_excesses.clone();
-	let mut txn_kernels = kernels.clone();
+	let mut txn_outputs = components.outputs.clone();
+	let mut txn_excesses = output_excesses.to_vec();
+	let mut txn_kernels = components.kernels.clone();
 	let mut kernel_fee = fees_paid;
 
 	// calculate fee required if we add our own output
@@ -138,7 +131,7 @@ async fn async_add_kernel_and_collect_fees(
 				.map_err(TxError::WalletError)?;
 			txn_outputs.push(wallet_output.1);
 
-			let output_excess = SecretKey::from_slice(&secp, &wallet_output.0.as_ref())
+			let output_excess = SecretKey::from_slice(&secp, wallet_output.0.as_ref())
 				.map_err(TxError::OutputBlindError)?;
 			txn_excesses.push(output_excess);
 		}
@@ -147,7 +140,10 @@ async fn async_add_kernel_and_collect_fees(
 	// generate random transaction offset
 	let our_offset = secp::random_secret(false);
 	let txn_offset = secp
-		.blind_sum(vec![prev_offset.clone(), our_offset.clone()], Vec::new())
+		.blind_sum(
+			vec![components.offset.clone(), our_offset.clone()],
+			Vec::new(),
+		)
 		.map_err(TxError::OffsetError)?;
 
 	// calculate kernel excess
@@ -185,10 +181,10 @@ async fn async_add_kernel_and_collect_fees(
 /// # Arguments
 ///
 /// * `excess`: A reference to a `SecretKey`. This key is used as an excess value for the transaction.
-///    The excess is a kind of cryptographic proof that the total sum of outputs and fees equals the
-///    total sum of inputs.
+///   The excess is a kind of cryptographic proof that the total sum of outputs and fees equals the
+///   total sum of inputs.
 /// * `fee`: An unsigned 64-bit integer representing the transaction fee in nanogrin. This is the fee
-///    that will be paid to the miner who mines the block containing this transaction.
+///   that will be paid to the miner who mines the block containing this transaction.
 ///
 /// # Returns
 ///
@@ -227,8 +223,8 @@ pub fn build_kernel(excess: &SecretKey, fee: u64) -> Result<TxKernel, TxError> {
 	let msg = kernel
 		.msg_to_sign()
 		.map_err(TxError::KernelSigMessageError)?;
-	kernel.excess = secp::commit(0, &excess).map_err(TxError::KernelExcessError)?;
-	kernel.excess_sig = secp::sign(&excess, &msg).map_err(TxError::KernelSigError)?;
+	kernel.excess = secp::commit(0, excess).map_err(TxError::KernelExcessError)?;
+	kernel.excess_sig = secp::sign(excess, &msg).map_err(TxError::KernelSigError)?;
 	kernel.verify().map_err(TxError::KernelVerifyError)?;
 
 	Ok(kernel)

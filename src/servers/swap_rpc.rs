@@ -14,6 +14,8 @@ use crate::servers::swap::{SwapError, SwapServer, SwapServerImpl};
 use crate::store::SwapStore;
 use crate::wallet::Wallet;
 
+pub type SwapServerHandle = Arc<tokio::sync::Mutex<dyn SwapServer>>;
+
 #[rpc(server)]
 pub trait SwapAPI {
 	#[rpc(name = "health")]
@@ -26,7 +28,7 @@ pub trait SwapAPI {
 #[derive(Clone)]
 struct RPCSwapServer {
 	server_config: ServerConfig,
-	server: Arc<tokio::sync::Mutex<dyn SwapServer>>,
+	server: SwapServerHandle,
 }
 
 impl RPCSwapServer {
@@ -86,13 +88,8 @@ pub fn listen(
 	wallet: Option<Arc<dyn Wallet>>,
 	node: Arc<dyn GrinNode>,
 	store: SwapStore,
-) -> std::result::Result<
-	(
-		Arc<tokio::sync::Mutex<dyn SwapServer>>,
-		jsonrpc_http_server::Server,
-	),
-	Box<dyn std::error::Error>,
-> {
+) -> std::result::Result<(SwapServerHandle, jsonrpc_http_server::Server), Box<dyn std::error::Error>>
+{
 	let server = SwapServerImpl::new(
 		server_config.clone(),
 		next_server,
@@ -128,7 +125,7 @@ mod tests {
 	use crate::config::ServerConfig;
 	use crate::servers::swap::mock::MockSwapServer;
 	use crate::servers::swap::{SwapError, SwapServer};
-	use crate::servers::swap_rpc::{RPCSwapServer, SwapReq};
+	use crate::servers::swap_rpc::{RPCSwapServer, SwapReq, SwapServerHandle};
 
 	async fn body_to_string(req: Response<Body>) -> String {
 		let body_bytes = hyper_legacy::body::to_bytes(req.into_body()).await.unwrap();
@@ -137,7 +134,7 @@ mod tests {
 
 	/// Spin up a temporary web service, query the API, then cleanup and return response
 	async fn async_make_request(
-		server: Arc<tokio::sync::Mutex<dyn SwapServer>>,
+		server: SwapServerHandle,
 		req: String,
 		runtime_handle: &tokio::runtime::Handle,
 	) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
@@ -275,12 +272,7 @@ mod tests {
 		};
 
 		let mut server = MockSwapServer::new();
-		server.set_response(
-			&onion,
-			SwapError::CoinNotFound {
-				commit: commitment.clone(),
-			},
-		);
+		server.set_response(&onion, SwapError::CoinNotFound { commit: commitment });
 		let server: Arc<Mutex<dyn SwapServer>> = Arc::new(Mutex::new(server));
 
 		let req = format!(

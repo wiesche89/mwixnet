@@ -68,6 +68,7 @@ pub enum MixError {
 #[async_trait]
 pub trait MixServer: Send + Sync {
 	/// Swaps the outputs provided and returns the final swapped outputs and kernels.
+	#[allow(clippy::ptr_arg, reason = "Grin serialization requires Vec")]
 	async fn mix_outputs(
 		&self,
 		onions: &Vec<Onion>,
@@ -125,7 +126,7 @@ impl MixServerImpl {
 		// Peel the top layer
 		let peeled = onion
 			.peel_layer(&self.server_config.key)
-			.map_err(|e| MixError::PeelOnionFailure(e))?;
+			.map_err(MixError::PeelOnionFailure)?;
 
 		// Verify the fee meets the minimum
 		let fee: u64 = peeled.payload.fee.into();
@@ -151,7 +152,7 @@ impl MixServerImpl {
 
 	async fn async_build_final_outputs(
 		&self,
-		peeled: &Vec<(usize, PeeledOnion)>,
+		peeled: &[(usize, PeeledOnion)],
 	) -> Result<MixResp, MixError> {
 		// Filter out commitments that already exist in the UTXO set
 		let filtered: Vec<&(usize, PeeledOnion)> = stream::iter(peeled.iter())
@@ -176,7 +177,7 @@ impl MixServerImpl {
 			.collect();
 
 		let fees_paid = filtered.iter().map(|(_, p)| p.payload.fee.fee()).sum();
-		let output_excesses = filtered
+		let output_excesses: Vec<_> = filtered
 			.iter()
 			.map(|(_, p)| p.payload.excess.clone())
 			.collect();
@@ -203,12 +204,9 @@ impl MixServerImpl {
 		})
 	}
 
-	async fn call_next_mixer(
-		&self,
-		peeled: &Vec<(usize, PeeledOnion)>,
-	) -> Result<MixResp, MixError> {
+	async fn call_next_mixer(&self, peeled: &[(usize, PeeledOnion)]) -> Result<MixResp, MixError> {
 		// Sort by commitment
-		let mut onions_with_index = peeled.clone();
+		let mut onions_with_index = peeled.to_vec();
 		onions_with_index
 			.sort_by(|(_, a), (_, b)| a.onion.commit.partial_cmp(&b.onion.commit).unwrap());
 
@@ -230,7 +228,7 @@ impl MixServerImpl {
 		let filtered_onions = filter_by_indices(&onions_with_index, &kept_next_indices);
 
 		// Calculate excess of entries kept
-		let excesses = filtered_onions
+		let excesses: Vec<_> = filtered_onions
 			.iter()
 			.map(|(_, p)| p.payload.excess.clone())
 			.collect();
@@ -278,7 +276,7 @@ impl MixServer for MixServerImpl {
 		let mut peeled: Vec<(usize, PeeledOnion)> = onions
 			.iter()
 			.enumerate()
-			.filter_map(|(i, o)| match self.peel_onion(&o) {
+			.filter_map(|(i, o)| match self.peel_onion(o) {
 				Ok(p) => Some((i, p)),
 				Err(e) => {
 					println!("Error peeling onion: {:?}", e);
@@ -326,7 +324,7 @@ mod test_util {
 		node: &Arc<MockGrinNode>,
 	) -> (Arc<DirectMixClient>, Arc<MockWallet>) {
 		let config = config::test_util::local_config(
-			&server_key,
+			server_key,
 			&Some(prev_server.1.clone()),
 			&next_server.as_ref().map(|(k, _)| k.clone()),
 		)
@@ -373,7 +371,6 @@ mod tests {
 			);
 			let db_root = concat!("./target/tmp/.", function_name!());
 			let _ = std::fs::remove_dir_all(db_root);
-			()
 		}};
 	}
 
@@ -476,21 +473,21 @@ mod tests {
 			.await?;
 
 		// Verify 3 outputs are returned: mixed output, mixer1's output, and mixer2's output
-		assert_eq!(mixed.indices, vec![0 as usize]);
+		assert_eq!(mixed.indices, vec![0_usize]);
 		assert_eq!(mixed.components.outputs.len(), 3);
 		let output_commits: HashSet<Commitment> = mixed
 			.components
 			.outputs
 			.iter()
-			.map(|o| o.identifier.commit.clone())
+			.map(|o| o.identifier.commit)
 			.collect();
 		assert!(output_commits.contains(&output_commit));
 
 		assert_eq!(mixer1_wallet.built_outputs().len(), 1);
-		assert!(output_commits.contains(mixer1_wallet.built_outputs().get(0).unwrap()));
+		assert!(output_commits.contains(mixer1_wallet.built_outputs().first().unwrap()));
 
 		assert_eq!(mixer2_wallet.built_outputs().len(), 1);
-		assert!(output_commits.contains(mixer2_wallet.built_outputs().get(0).unwrap()));
+		assert!(output_commits.contains(mixer2_wallet.built_outputs().first().unwrap()));
 
 		Ok(())
 	}

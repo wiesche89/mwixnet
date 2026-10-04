@@ -40,6 +40,7 @@ pub enum MixClientError {
 #[async_trait]
 pub trait MixClient: Send + Sync {
 	/// Swaps the outputs provided and returns the final swapped outputs and kernels.
+	#[allow(clippy::ptr_arg, reason = "Grin serialization requires Vec")]
 	async fn mix_outputs(&self, onions: &Vec<Onion>) -> Result<MixResp, MixClientError>;
 }
 
@@ -123,6 +124,12 @@ pub mod mock {
 		results: HashMap<Vec<Onion>, MixResp>,
 	}
 
+	impl Default for MockMixClient {
+		fn default() -> Self {
+			Self::new()
+		}
+	}
+
 	impl MockMixClient {
 		pub fn new() -> MockMixClient {
 			MockMixClient {
@@ -130,8 +137,8 @@ pub mod mock {
 			}
 		}
 
-		pub fn set_response(&mut self, onions: &Vec<Onion>, r: MixResp) {
-			self.results.insert(onions.clone(), r);
+		pub fn set_response(&mut self, onions: &[Onion], r: MixResp) {
+			self.results.insert(onions.to_vec(), r);
 		}
 	}
 
@@ -186,7 +193,7 @@ pub mod test_util {
 				serialized.as_slice(),
 			)
 			.unwrap();
-			Ok(self.mix_server.mix_outputs(&onions, &sig).await.unwrap())
+			Ok(self.mix_server.mix_outputs(onions, &sig).await.unwrap())
 		}
 	}
 }

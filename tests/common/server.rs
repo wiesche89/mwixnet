@@ -23,7 +23,7 @@ pub struct IntegrationSwapServer<R: tor_rtcompat::Runtime> {
 	tor_instance: Arc<grin_util::Mutex<TorService<R>>>,
 	swap_server: Arc<tokio::sync::Mutex<dyn SwapServer>>,
 	rpc_server: jsonrpc_http_server::Server,
-	_wallet: Arc<grin_util::Mutex<IntegrationGrinWallet>>,
+	_wallet: Arc<IntegrationGrinWallet>,
 }
 
 impl<R: tor_rtcompat::Runtime> IntegrationSwapServer<R> {
@@ -67,7 +67,7 @@ pub struct IntegrationMixServer<R: tor_rtcompat::Runtime> {
 	onion_pubkey: MwixnetServerPublicKey,
 	tor_instance: Arc<grin_util::Mutex<TorService<R>>>,
 	rpc_server: jsonrpc_http_server::Server,
-	_wallet: Arc<grin_util::Mutex<IntegrationGrinWallet>>,
+	_wallet: Arc<IntegrationGrinWallet>,
 }
 
 async fn async_new_swap_server<R>(
@@ -82,7 +82,8 @@ async fn async_new_swap_server<R>(
 where
 	R: tor_rtcompat::Runtime + tor_rtcompat::ToplevelBlockOn,
 {
-	let wallet = wallets.async_new_wallet(&node.lock().api_address()).await;
+	let node_addr = node.lock().api_address();
+	let wallet = wallets.async_new_wallet(&node_addr).await;
 
 	let server_config = mwixnet::ServerConfig {
 		key: server_key.clone(),
@@ -93,20 +94,17 @@ where
 			.unwrap(),
 		grin_node_url: node.lock().api_address().to_string(),
 		grin_node_foreign_api_secret_path: None,
-		wallet_owner_url: wallet.lock().owner_address().to_string(),
+		wallet_owner_url: wallet.owner_address().to_string(),
 		wallet_owner_secret_path: None,
 		collect_fees: true,
 		min_circuit_timeout_ms: mwixnet::config::DEFAULT_MIN_CIRCUIT_TIMEOUT_MS,
 		prev_server: None,
-		next_server: match next_server {
-			Some(s) => Some(DalekPublicKey::from_secret(&s.server_key)),
-			None => None,
-		},
+		next_server: next_server.map(|s| DalekPublicKey::from_secret(&s.server_key)),
 	};
 
 	// Open SwapStore
 	let store = SwapStore::new(format!("{}/db", data_dir).as_str()).unwrap();
-	let tor_instance = tor::async_init_tor(tor_runtime, &data_dir, &server_config)
+	let tor_instance = tor::async_init_tor(tor_runtime, data_dir, &server_config)
 		.await
 		.unwrap();
 	let tor_instance = Arc::new(grin_util::Mutex::new(tor_instance));
@@ -122,7 +120,7 @@ where
 			))),
 			None => None,
 		},
-		Some(wallet.lock().get_client()),
+		Some(wallet.get_client()),
 		node.lock().to_client(),
 		store,
 	)
@@ -139,7 +137,6 @@ where
 
 async fn async_new_mix_server<R>(
 	data_dir: &str,
-	rt_handle: &tokio::runtime::Handle,
 	tor_runtime: R,
 	wallets: &mut GrinWalletManager,
 	server_key: &SecretKey,
@@ -150,7 +147,8 @@ async fn async_new_mix_server<R>(
 where
 	R: tor_rtcompat::Runtime + tor_rtcompat::ToplevelBlockOn,
 {
-	let wallet = wallets.async_new_wallet(&node.lock().api_address()).await;
+	let node_addr = node.lock().api_address();
+	let wallet = wallets.async_new_wallet(&node_addr).await;
 	let server_config = mwixnet::ServerConfig {
 		key: server_key.clone(),
 		interval_s: 15,
@@ -160,24 +158,21 @@ where
 			.unwrap(),
 		grin_node_url: node.lock().api_address().to_string(),
 		grin_node_foreign_api_secret_path: None,
-		wallet_owner_url: wallet.lock().owner_address().to_string(),
+		wallet_owner_url: wallet.owner_address().to_string(),
 		wallet_owner_secret_path: None,
 		collect_fees: true,
 		min_circuit_timeout_ms: mwixnet::config::DEFAULT_MIN_CIRCUIT_TIMEOUT_MS,
 		prev_server: Some(prev_server),
-		next_server: match next_server {
-			Some(s) => Some(DalekPublicKey::from_secret(&s.server_key)),
-			None => None,
-		},
+		next_server: next_server.map(|s| DalekPublicKey::from_secret(&s.server_key)),
 	};
 
-	let tor_instance = tor::async_init_tor(tor_runtime, &data_dir, &server_config)
+	let tor_instance = tor::async_init_tor(tor_runtime, data_dir, &server_config)
 		.await
 		.unwrap();
 	let tor_instance = Arc::new(grin_util::Mutex::new(tor_instance));
 
 	let (_, rpc_server) = mwixnet::mix_listen(
-		rt_handle,
+		&tokio::runtime::Handle::current(),
 		server_config.clone(),
 		match next_server {
 			Some(s) => Some(Arc::new(MixClientImpl::new(
@@ -187,7 +182,7 @@ where
 			))),
 			None => None,
 		},
-		Some(wallet.lock().get_client()),
+		Some(wallet.get_client()),
 		node.lock().to_client(),
 	)
 	.unwrap();
@@ -229,11 +224,10 @@ impl Servers {
 		for i in (0..num_mixers).rev() {
 			let mix_server = async_new_mix_server(
 				format!("{}/mixers/{}", test_dir, i).as_str(),
-				rt_handle,
 				tor_runtime.clone(),
 				wallets,
 				&server_keys[i + 1],
-				&node,
+				node,
 				DalekPublicKey::from_secret(&server_keys[i]),
 				mixers.last(),
 			)
@@ -258,7 +252,7 @@ impl Servers {
 			tor_runtime.clone(),
 			wallets,
 			&server_keys[0],
-			&node,
+			node,
 			mixers.first(),
 		)
 		.await;

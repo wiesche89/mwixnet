@@ -11,7 +11,6 @@ use grin_core::global;
 use grin_core::global::ChainTypes;
 use grin_util::{StopState, ZeroingString};
 use rand::{thread_rng, Rng};
-use rpassword;
 use tor_rtcompat::PreferredRuntime;
 
 use grin_onion::crypto;
@@ -107,10 +106,10 @@ fn real_main() -> Result<(), Box<dyn std::error::Error>> {
 	let no_fee_collection = args.is_present("no_fee_collection");
 	let prev_server = args
 		.value_of("prev_server")
-		.map(|p| DalekPublicKey::from_hex(&p).unwrap());
+		.map(|p| DalekPublicKey::from_hex(p).unwrap());
 	let next_server = args
 		.value_of("next_server")
-		.map(|p| DalekPublicKey::from_hex(&p).unwrap());
+		.map(|p| DalekPublicKey::from_hex(p).unwrap());
 
 	// Write a new config file if init-config command is supplied
 	if let ("init-config", Some(_)) = args.subcommand() {
@@ -179,7 +178,7 @@ fn real_main() -> Result<(), Box<dyn std::error::Error>> {
 		if sub_args.is_present("output_file") {
 			//output server pubkey to file
 			let output_file = sub_args.value_of("output_file").unwrap();
-			std::fs::write(output_file, format!("{}", server_pubkey.to_hex()))?;
+			std::fs::write(output_file, server_pubkey.to_hex())?;
 			println!("Server pubkey written to file: {}", output_file);
 		} else {
 			println!("{}", server_pubkey.to_hex());

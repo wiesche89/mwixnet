@@ -17,6 +17,8 @@ use crate::servers::mix::{MixError, MixServer, MixServerImpl};
 use crate::tx::TxComponents;
 use crate::wallet::Wallet;
 
+pub type MixServerHandle = Arc<tokio::sync::Mutex<dyn MixServer>>;
+
 #[derive(Serialize, Deserialize)]
 pub struct MixReq {
 	onions: Vec<Onion>,
@@ -48,7 +50,7 @@ pub trait MixAPI {
 #[derive(Clone)]
 struct RPCMixServer {
 	server_config: ServerConfig,
-	server: Arc<tokio::sync::Mutex<dyn MixServer>>,
+	server: MixServerHandle,
 }
 
 impl RPCMixServer {
@@ -104,13 +106,7 @@ pub fn listen(
 	next_server: Option<Arc<dyn MixClient>>,
 	wallet: Option<Arc<dyn Wallet>>,
 	node: Arc<dyn GrinNode>,
-) -> Result<
-	(
-		Arc<tokio::sync::Mutex<dyn MixServer>>,
-		jsonrpc_http_server::Server,
-	),
-	Box<dyn std::error::Error>,
-> {
+) -> Result<(MixServerHandle, jsonrpc_http_server::Server), Box<dyn std::error::Error>> {
 	let server = MixServerImpl::new(server_config.clone(), next_server, wallet, node.clone());
 	let server = Arc::new(tokio::sync::Mutex::new(server));
 

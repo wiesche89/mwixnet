@@ -64,7 +64,7 @@ impl HttpWallet {
 		let mut addrs_iter = wallet_owner_url.to_socket_addrs().unwrap();
 		let wallet_owner_url = addrs_iter.next().unwrap();
 		let shared_key =
-			HttpWallet::async_init_secure_api(&wallet_owner_url, &wallet_owner_secret).await?;
+			HttpWallet::async_init_secure_api(&wallet_owner_url, wallet_owner_secret).await?;
 		let open_wallet_params = json!({
 			"name": null,
 			"password": wallet_pass.to_string()
@@ -72,7 +72,7 @@ impl HttpWallet {
 		let url = format!("http://{}{}", wallet_owner_url, ENDPOINT);
 		let token: Token = http::async_send_enc_request(
 			&url,
-			&wallet_owner_secret,
+			wallet_owner_secret,
 			"open_wallet",
 			&open_wallet_params,
 			&shared_key,
@@ -82,7 +82,7 @@ impl HttpWallet {
 		info!("Connected to wallet");
 
 		Ok(HttpWallet {
-			wallet_owner_url: wallet_owner_url.clone(),
+			wallet_owner_url,
 			wallet_owner_secret: wallet_owner_secret.clone(),
 			shared_key: shared_key.clone(),
 			token: token.clone(),
@@ -104,7 +104,7 @@ impl HttpWallet {
 		let url = format!("http://{}{}", wallet_owner_url, ENDPOINT);
 		let response_pk: ECDHPubkey = http::async_send_json_request(
 			&url,
-			&wallet_owner_secret,
+			wallet_owner_secret,
 			"init_secure_api",
 			&init_params,
 		)
@@ -112,7 +112,7 @@ impl HttpWallet {
 		.map_err(WalletError::WalletCommError)?;
 
 		let shared_key = {
-			let mut shared_pubkey = response_pk.ecdh_pubkey.clone();
+			let mut shared_pubkey = response_pk.ecdh_pubkey;
 			shared_pubkey.mul_assign(&secp, &ephemeral_sk).unwrap();
 
 			let x_coord = shared_pubkey.serialize_vec(&secp, true);
@@ -198,7 +198,7 @@ pub mod mock {
 	use super::{Wallet, WalletError};
 
 	/// Mock implementation of the 'Wallet' trait for unit-tests.
-	#[derive(Clone)]
+	#[derive(Clone, Default)]
 	pub struct MockWallet {
 		built_outputs: Arc<Mutex<Vec<Commitment>>>,
 	}
@@ -235,10 +235,10 @@ pub mod mock {
 				None,
 				None,
 			);
-			let output = Output::new(OutputFeatures::Plain, commit.clone(), proof);
+			let output = Output::new(OutputFeatures::Plain, commit, proof);
 
 			let mut locked = self.built_outputs.lock().unwrap();
-			locked.borrow_mut().push(output.commitment().clone());
+			locked.borrow_mut().push(output.commitment());
 
 			Ok((BlindingFactor::from_secret_key(blind), output))
 		}

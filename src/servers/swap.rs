@@ -136,13 +136,11 @@ impl SwapServerImpl {
 			if node::async_is_spendable(&self.node, &swap.input.commit, next_block_height)
 				.await
 				.unwrap_or(false)
-			{
-				if !node::async_is_unspent(&self.node, &swap.output_commit)
+				&& !node::async_is_unspent(&self.node, &swap.output_commit)
 					.await
 					.unwrap_or(true)
-				{
-					return true;
-				}
+			{
+				return true;
 			}
 		}
 
@@ -156,7 +154,7 @@ impl SwapServerImpl {
 	) -> Result<Option<Arc<Transaction>>, SwapError> {
 		swaps.sort_by(|a, b| a.output_commit.partial_cmp(&b.output_commit).unwrap());
 
-		if swaps.len() == 0 {
+		if swaps.is_empty() {
 			return Ok(None);
 		}
 
@@ -213,14 +211,17 @@ impl SwapServerImpl {
 		let inputs: Vec<Input> = filtered.iter().map(|s| s.input).collect();
 		let output_excesses: Vec<SecretKey> = filtered.iter().map(|s| s.excess.clone()).collect();
 
+		let components = tx::TxComponents {
+			offset,
+			outputs,
+			kernels,
+		};
 		let tx = tx::async_assemble_tx(
 			self.wallet.as_ref(),
 			&inputs,
-			&outputs,
-			&kernels,
+			&components,
 			self.get_fee_base(),
 			fees_paid,
-			&offset,
 			&output_excesses,
 		)
 		.await?;
@@ -229,7 +230,7 @@ impl SwapServerImpl {
 		self.node.async_post_tx(&tx).await?;
 
 		let input_count = inputs.len();
-		let output_count = outputs.len();
+		let output_count = components.outputs.len();
 		let failed_count = failed.len();
 		store.save_swap_tx(&SwapTx {
 			tx: tx.clone(),
@@ -286,13 +287,13 @@ impl SwapServer for SwapServerImpl {
 			.await
 			.map_err(|e| SwapError::UnknownError(e.to_string()))?;
 		let input = input.ok_or(SwapError::CoinNotFound {
-			commit: onion.commit.clone(),
+			commit: onion.commit,
 		})?;
 
 		// Peel off top layer of encryption
 		let peeled = onion
 			.peel_layer(&self.server_config.key)
-			.map_err(|e| SwapError::PeelOnionFailure(e))?;
+			.map_err(SwapError::PeelOnionFailure)?;
 
 		// Verify the fee meets the minimum
 		let fee: u64 = peeled.payload.fee.into();
@@ -332,7 +333,7 @@ impl SwapServer for SwapServerImpl {
 			)
 			.map_err(|e| match e {
 				StoreError::AlreadyExists(_) => SwapError::AlreadySwapped {
-					commit: onion.commit.clone(),
+					commit: onion.commit,
 				},
 				_ => SwapError::StoreError(e),
 			})?;
@@ -356,7 +357,7 @@ impl SwapServer for SwapServerImpl {
 			.collect();
 		let mut spendable: Vec<SwapData> = vec![];
 		for swap in &swaps {
-			if self.async_is_spendable(next_block_height, &swap).await {
+			if self.async_is_spendable(next_block_height, swap).await {
 				spendable.push(swap.clone());
 			}
 		}
@@ -382,8 +383,8 @@ impl SwapServer for SwapServerImpl {
 			}
 
 			// If transaction is still valid, rebroadcast and return tx
-			if node::async_is_tx_valid(&self.node, &tx).await? {
-				self.node.async_post_tx(&tx).await?;
+			if node::async_is_tx_valid(&self.node, tx).await? {
+				self.node.async_post_tx(tx).await?;
 				return Ok(Some(tx.clone()));
 			}
 
@@ -391,7 +392,7 @@ impl SwapServer for SwapServerImpl {
 			let next_block_height = self.node.async_get_chain_tip().await?.0 + 1;
 			let mut swaps = Vec::new();
 			for input_commit in &tx.inputs_committed() {
-				if let Ok(swap) = locked_store.get_swap(&input_commit) {
+				if let Ok(swap) = locked_store.get_swap(input_commit) {
 					if self.async_is_spendable(next_block_height, &swap).await {
 						swaps.push(swap);
 					}
@@ -423,6 +424,12 @@ pub mod mock {
 		errors: HashMap<Onion, SwapError>,
 	}
 
+	impl Default for MockSwapServer {
+		fn default() -> Self {
+			Self::new()
+		}
+	}
+
 	impl MockSwapServer {
 		pub fn new() -> MockSwapServer {
 			MockSwapServer {
@@ -438,7 +445,7 @@ pub mod mock {
 	#[async_trait]
 	impl SwapServer for MockSwapServer {
 		async fn swap(&self, onion: &Onion, _comsig: &ComSignature) -> Result<(), SwapError> {
-			if let Some(e) = self.errors.get(&onion) {
+			if let Some(e) = self.errors.get(onion) {
 				return Err(e.clone());
 			}
 
@@ -480,7 +487,7 @@ pub mod test_util {
 		node: Arc<dyn GrinNode>,
 	) -> (Arc<SwapServerImpl>, Arc<MockWallet>) {
 		let config =
-			config::test_util::local_config(&server_key, &None, &next_server.map(|n| n.0.clone()))
+			config::test_util::local_config(server_key, &None, &next_server.map(|n| n.0.clone()))
 				.unwrap();
 
 		let wallet = Arc::new(MockWallet::new());
@@ -565,19 +572,19 @@ mod tests {
 		let comsig = ComSignature::sign(value, &blind, &onion.serialize()?, false)?;
 
 		let node: Arc<MockGrinNode> = Arc::new(MockGrinNode::new_with_utxos(&vec![&input_commit]));
-		let (server, _) = super::test_util::new_swapper(&test_dir, &server_key, None, node.clone());
+		let (server, _) = super::test_util::new_swapper(test_dir, &server_key, None, node.clone());
 		server.swap(&onion, &comsig).await?;
 
 		// Make sure entry is added to server.
 		let expected = SwapData {
 			excess: hop_excess.clone(),
-			output_commit: output_commit.clone(),
+			output_commit,
 			rangeproof: Some(proof),
-			input: Input::new(OutputFeatures::Plain, input_commit.clone()),
+			input: Input::new(OutputFeatures::Plain, input_commit),
 			fee: fee as u64,
 			onion: Onion {
 				ephemeral_pubkey: xPublicKey::from([0u8; 32]),
-				commit: output_commit.clone(),
+				commit: output_commit,
 				enc_payloads: vec![],
 			},
 			status: SwapStatus::Unprocessed,
@@ -633,7 +640,7 @@ mod tests {
 		let onion = create_onion(&input_commit, &vec![hop], false)?;
 
 		let node: Arc<MockGrinNode> = Arc::new(MockGrinNode::new());
-		let (server, _) = super::test_util::new_swapper(&test_dir, &server_key, None, node.clone());
+		let (server, _) = super::test_util::new_swapper(test_dir, &server_key, None, node.clone());
 		server.store.lock().await.save_swap(
 			&SwapData {
 				excess: hop_excess,
@@ -692,24 +699,20 @@ mod tests {
 		let mut mock_mixer = mix_client::mock::MockMixClient::new();
 		let mixer_response = TxComponents {
 			offset: ZERO_KEY,
-			outputs: vec![Output::new(
-				OutputFeatures::Plain,
-				output_commit.clone(),
-				proof.clone(),
-			)],
+			outputs: vec![Output::new(OutputFeatures::Plain, output_commit, proof)],
 			kernels: vec![tx::build_kernel(&mixer_hop_excess, mixer_fee as u64)?],
 		};
 		mock_mixer.set_response(
-			&vec![mixer_onion.clone()],
+			std::slice::from_ref(&mixer_onion),
 			MixResp {
-				indices: vec![0 as usize],
+				indices: vec![0_usize],
 				components: mixer_response,
 			},
 		);
 
 		let mixer: Arc<dyn MixClient> = Arc::new(mock_mixer);
 		let (swapper, _) = super::test_util::new_swapper(
-			&test_dir,
+			test_dir,
 			&swap_sk,
 			Some((&mixer_pk, &mixer)),
 			node.clone(),
@@ -754,7 +757,7 @@ mod tests {
 		let comsig = ComSignature::sign(value, &blind, &onion.serialize()?, false)?;
 
 		let node: Arc<MockGrinNode> = Arc::new(MockGrinNode::new_with_utxos(&vec![&input_commit]));
-		let (server, _) = super::test_util::new_swapper(&test_dir, &server_key, None, node.clone());
+		let (server, _) = super::test_util::new_swapper(test_dir, &server_key, None, node.clone());
 		let result = server.swap(&onion, &comsig).await;
 		assert_eq!(Err(SwapError::InvalidPayloadLength), result);
 
@@ -787,7 +790,7 @@ mod tests {
 		let comsig = ComSignature::sign(value, &wrong_blind, &onion.serialize()?, false)?;
 
 		let node: Arc<MockGrinNode> = Arc::new(MockGrinNode::new_with_utxos(&vec![&input_commit]));
-		let (server, _) = super::test_util::new_swapper(&test_dir, &server_key, None, node.clone());
+		let (server, _) = super::test_util::new_swapper(test_dir, &server_key, None, node.clone());
 		let result = server.swap(&onion, &comsig).await;
 		assert_eq!(Err(SwapError::InvalidComSignature), result);
 
@@ -819,7 +822,7 @@ mod tests {
 		let comsig = ComSignature::sign(value, &blind, &onion.serialize()?, false)?;
 
 		let node: Arc<MockGrinNode> = Arc::new(MockGrinNode::new_with_utxos(&vec![&input_commit]));
-		let (server, _) = super::test_util::new_swapper(&test_dir, &server_key, None, node.clone());
+		let (server, _) = super::test_util::new_swapper(test_dir, &server_key, None, node.clone());
 		let result = server.swap(&onion, &comsig).await;
 		assert_eq!(Err(SwapError::InvalidRangeproof), result);
 
@@ -848,7 +851,7 @@ mod tests {
 		let comsig = ComSignature::sign(value, &blind, &onion.serialize()?, false)?;
 
 		let node: Arc<MockGrinNode> = Arc::new(MockGrinNode::new_with_utxos(&vec![&input_commit]));
-		let (server, _) = super::test_util::new_swapper(&test_dir, &server_key, None, node.clone());
+		let (server, _) = super::test_util::new_swapper(test_dir, &server_key, None, node.clone());
 		let result = server.swap(&onion, &comsig).await;
 		assert_eq!(Err(SwapError::MissingRangeproof), result);
 
@@ -879,11 +882,11 @@ mod tests {
 		let comsig = ComSignature::sign(value, &blind, &onion.serialize()?, false)?;
 
 		let node: Arc<MockGrinNode> = Arc::new(MockGrinNode::new());
-		let (server, _) = super::test_util::new_swapper(&test_dir, &server_key, None, node.clone());
+		let (server, _) = super::test_util::new_swapper(test_dir, &server_key, None, node.clone());
 		let result = server.swap(&onion, &comsig).await;
 		assert_eq!(
 			Err(SwapError::CoinNotFound {
-				commit: input_commit.clone()
+				commit: input_commit
 			}),
 			result
 		);
@@ -915,14 +918,14 @@ mod tests {
 		let comsig = ComSignature::sign(value, &blind, &onion.serialize()?, false)?;
 
 		let node: Arc<MockGrinNode> = Arc::new(MockGrinNode::new_with_utxos(&vec![&input_commit]));
-		let (server, _) = super::test_util::new_swapper(&test_dir, &server_key, None, node.clone());
+		let (server, _) = super::test_util::new_swapper(test_dir, &server_key, None, node.clone());
 		server.swap(&onion, &comsig).await?;
 
 		// Call swap a second time
 		let result = server.swap(&onion, &comsig).await;
 		assert_eq!(
 			Err(SwapError::AlreadySwapped {
-				commit: input_commit.clone()
+				commit: input_commit
 			}),
 			result
 		);
@@ -938,10 +941,9 @@ mod tests {
 
 		let server_key = secp::random_secret(false);
 		let node: Arc<MockGrinNode> = Arc::new(MockGrinNode::new());
-		let (server, _) = super::test_util::new_swapper(&test_dir, &server_key, None, node.clone());
+		let (server, _) = super::test_util::new_swapper(test_dir, &server_key, None, node.clone());
 		let kern = tx::build_kernel(&secp::random_secret(false), 1000u64)?;
-		let tx: Arc<Transaction> =
-			Arc::new(Transaction::new(Inputs::default(), &[], &[kern.clone()]));
+		let tx: Arc<Transaction> = Arc::new(Transaction::new(Inputs::default(), &[], &[kern]));
 		let result = server.check_reorg(&tx).await;
 		assert_eq!(Err(SwapError::SwapTxNotFound(kern.excess())), result);
 
@@ -971,7 +973,7 @@ mod tests {
 		let comsig = ComSignature::sign(value, &blind, &onion.serialize()?, false)?;
 
 		let node: Arc<MockGrinNode> = Arc::new(MockGrinNode::new_with_utxos(&vec![&input_commit]));
-		let (server, _) = super::test_util::new_swapper(&test_dir, &server_key, None, node.clone());
+		let (server, _) = super::test_util::new_swapper(test_dir, &server_key, None, node.clone());
 		let result = server.swap(&onion, &comsig).await;
 
 		assert!(result.is_err());
@@ -1001,7 +1003,7 @@ mod tests {
 		let comsig = ComSignature::sign(value, &blind, &onion.serialize()?, false)?;
 
 		let node: Arc<MockGrinNode> = Arc::new(MockGrinNode::new_with_utxos(&vec![&input_commit]));
-		let (server, _) = super::test_util::new_swapper(&test_dir, &server_key, None, node.clone());
+		let (server, _) = super::test_util::new_swapper(test_dir, &server_key, None, node.clone());
 		let result = server.swap(&onion, &comsig).await;
 		assert_eq!(
 			Err(SwapError::FeeTooLow {
