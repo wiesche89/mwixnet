@@ -1,5 +1,8 @@
 name: Continuous Integration
-on: [push, pull_request]
+on:
+  push:
+    branches-ignore: [cd-test]
+  pull_request:
 
 permissions:
   contents: read
