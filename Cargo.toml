@@ -4,26 +4,18 @@ default-run = "mwixnet"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 arti-client = { version = "0.43.0", features = ["static", "pt-client", "onion-service-service", "onion-service-client"] }
 async-std = { version = "1", features = ["tokio1"] }
 async-trait = "0.1.74"
-blake2 = { package = "blake2-rfc", version = "0.2" }
-byteorder = "1"
 bytes = "1.5.0"
-chacha20 = "0.9.1"
 chrono = "0.4.31"
 clap = { version = "2.33", features = ["yaml"] }
-ctrlc = { version = "3.1", features = ["termination"] }
 curve25519-dalek = "4.1.2"
 dirs = "2.0"
 ed25519-dalek = "2.1.1"
 function_name = "0.3.0"
 futures = "0.3"
-fs-mistrust = "0.14.2"
-hmac = { version = "0.12.0", features = ["std"] }
 http-body-util = "0.1.3"
 hyper = { version = "1.10.1", features = ["http1", "client"] }
 hyper-util = { version = "0.1.20", features = ["tokio"] }
@@ -33,13 +25,10 @@ itertools = { version = "0.12.0" }
 jsonrpc-core = "18.0.0"
 jsonrpc-derive = "18.0.0"
 jsonrpc-http-server = "18.0.0"
-lazy_static = "1"
-pbkdf2 = "0.8.0"
 rand = "0.7.3"
 remove_dir_all = "0.8.2"
 ring = "0.16"
 rpassword = "4.0"
-rusqlite = { version = "0.36.0", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_derive = "1"
 serde_json = "1"
@@ -56,33 +45,31 @@ tor-log-ratelim = "0.43.0"
 tor-rtcompat = { version = "0.43.0", features = ["static"] }
 log = "0.4.20"
 
-# Bleeding Edge Grin Deps
-grin_secp256k1zkp = { version = "0.7.15", features = ["bullet-proof-sizing"] }
-grin_api = { git = "https://github.com/mimblewimble/grin", branch = "staging" }
-grin_core = { git = "https://github.com/mimblewimble/grin", branch = "staging" }
-grin_chain = { git = "https://github.com/mimblewimble/grin", branch = "staging" }
-grin_keychain = { git = "https://github.com/mimblewimble/grin", branch = "staging" }
-grin_p2p = { git = "https://github.com/mimblewimble/grin", branch = "staging" }
-grin_servers = { git = "https://github.com/mimblewimble/grin", branch = "staging" }
-grin_store = { git = "https://github.com/mimblewimble/grin", branch = "staging" }
-grin_util = { git = "https://github.com/mimblewimble/grin", branch = "staging" }
-grin_wallet_api = { git = "https://github.com/wiesche89/grin-wallet", rev = "fed6733a2209aec2ed963a5691d91c6f00b4261d" }
-grin_wallet_config = { git = "https://github.com/wiesche89/grin-wallet", rev = "fed6733a2209aec2ed963a5691d91c6f00b4261d" }
-grin_wallet_controller = { git = "https://github.com/wiesche89/grin-wallet", rev = "fed6733a2209aec2ed963a5691d91c6f00b4261d" }
-grin_wallet_impls = { git = "https://github.com/wiesche89/grin-wallet", rev = "fed6733a2209aec2ed963a5691d91c6f00b4261d" }
-grin_wallet_libwallet = { git = "https://github.com/wiesche89/grin-wallet", rev = "fed6733a2209aec2ed963a5691d91c6f00b4261d" }
-grin_wallet_util = { git = "https://github.com/wiesche89/grin-wallet", rev = "fed6733a2209aec2ed963a5691d91c6f00b4261d" }
+grin_api = { git = "https://github.com/mimblewimble/grin", rev = "1425f603295ba166eccd9e4e0af0226742f90844" }
+grin_core = { git = "https://github.com/mimblewimble/grin", rev = "1425f603295ba166eccd9e4e0af0226742f90844" }
+grin_chain = { git = "https://github.com/mimblewimble/grin", rev = "1425f603295ba166eccd9e4e0af0226742f90844" }
+grin_keychain = { git = "https://github.com/mimblewimble/grin", rev = "1425f603295ba166eccd9e4e0af0226742f90844" }
+grin_p2p = { git = "https://github.com/mimblewimble/grin", rev = "1425f603295ba166eccd9e4e0af0226742f90844" }
+grin_servers = { git = "https://github.com/mimblewimble/grin", rev = "1425f603295ba166eccd9e4e0af0226742f90844" }
+grin_store = { git = "https://github.com/mimblewimble/grin", rev = "1425f603295ba166eccd9e4e0af0226742f90844" }
+grin_util = { git = "https://github.com/mimblewimble/grin", rev = "1425f603295ba166eccd9e4e0af0226742f90844" }
+grin_wallet_api = { git = "https://github.com/wiesche89/grin-wallet", rev = "4f7801f1475263b7b279c84697a9f3faa90f9b4e" }
+grin_wallet_config = { git = "https://github.com/wiesche89/grin-wallet", rev = "4f7801f1475263b7b279c84697a9f3faa90f9b4e" }
+grin_wallet_controller = { git = "https://github.com/wiesche89/grin-wallet", rev = "4f7801f1475263b7b279c84697a9f3faa90f9b4e" }
+grin_wallet_impls = { git = "https://github.com/wiesche89/grin-wallet", rev = "4f7801f1475263b7b279c84697a9f3faa90f9b4e" }
+grin_wallet_libwallet = { git = "https://github.com/wiesche89/grin-wallet", rev = "4f7801f1475263b7b279c84697a9f3faa90f9b4e" }
+grin_wallet_util = { git = "https://github.com/wiesche89/grin-wallet", rev = "4f7801f1475263b7b279c84697a9f3faa90f9b4e" }
 
 [dev-dependencies]
-grin_wallet_libwallet = { git = "https://github.com/wiesche89/grin-wallet", rev = "fed6733a2209aec2ed963a5691d91c6f00b4261d", features = ["mwixnet-test"] }
+grin_wallet_libwallet = { git = "https://github.com/wiesche89/grin-wallet", rev = "4f7801f1475263b7b279c84697a9f3faa90f9b4e", features = ["mwixnet-test"] }
 x25519-dalek = { version = "2", features = ["static_secrets"] }
 
 [patch."https://github.com/wiesche89/grin-wallet"]
-grin_api = { git = "https://github.com/mimblewimble/grin", branch = "staging" }
-grin_chain = { git = "https://github.com/mimblewimble/grin", branch = "staging" }
-grin_core = { git = "https://github.com/mimblewimble/grin", branch = "staging" }
-grin_keychain = { git = "https://github.com/mimblewimble/grin", branch = "staging" }
-grin_p2p = { git = "https://github.com/mimblewimble/grin", branch = "staging" }
-grin_pool = { git = "https://github.com/mimblewimble/grin", branch = "staging" }
-grin_store = { git = "https://github.com/mimblewimble/grin", branch = "staging" }
-grin_util = { git = "https://github.com/mimblewimble/grin", branch = "staging" }
+grin_api = { git = "https://github.com/mimblewimble/grin", rev = "1425f603295ba166eccd9e4e0af0226742f90844" }
+grin_chain = { git = "https://github.com/mimblewimble/grin", rev = "1425f603295ba166eccd9e4e0af0226742f90844" }
+grin_core = { git = "https://github.com/mimblewimble/grin", rev = "1425f603295ba166eccd9e4e0af0226742f90844" }
+grin_keychain = { git = "https://github.com/mimblewimble/grin", rev = "1425f603295ba166eccd9e4e0af0226742f90844" }
+grin_p2p = { git = "https://github.com/mimblewimble/grin", rev = "1425f603295ba166eccd9e4e0af0226742f90844" }
+grin_pool = { git = "https://github.com/mimblewimble/grin", rev = "1425f603295ba166eccd9e4e0af0226742f90844" }
+grin_store = { git = "https://github.com/mimblewimble/grin", rev = "1425f603295ba166eccd9e4e0af0226742f90844" }
+grin_util = { git = "https://github.com/mimblewimble/grin", rev = "1425f603295ba166eccd9e4e0af0226742f90844" }

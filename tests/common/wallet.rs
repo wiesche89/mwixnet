@@ -17,8 +17,8 @@ use grin_wallet_libwallet::{InitTxArgs, Slate, VersionedSlate, WalletInfo, Walle
 use log::error;
 use mwixnet::http;
 use mwixnet::wallet::HttpWallet;
-use secp256k1zkp::pedersen::Commitment;
-use secp256k1zkp::SecretKey;
+use grin_util::secp::pedersen::Commitment;
+use grin_util::secp::SecretKey;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::json;
 

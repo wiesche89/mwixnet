@@ -10,7 +10,7 @@ use serde_json::json;
 use thiserror::Error;
 use tor_rtcompat::Runtime;
 
-use grin_onion::crypto::dalek::{self, DalekPublicKey};
+use grin_onion::crypto::dalek::{self, MwixnetServerIdentityKey};
 use grin_onion::onion::Onion;
 use grin_wallet_libwallet::mwixnet::onion as grin_onion;
 
@@ -53,7 +53,7 @@ impl<R: Runtime> MixClientImpl<R> {
 	pub fn new(
 		config: ServerConfig,
 		tor: Arc<grin_util::Mutex<TorService<R>>>,
-		next_pubkey: DalekPublicKey,
+		next_pubkey: MwixnetServerIdentityKey,
 	) -> Self {
 		let addr = OnionV3Address::from_bytes(next_pubkey.as_ref().to_bytes());
 		MixClientImpl { config, tor, addr }
@@ -157,7 +157,7 @@ pub mod test_util {
 	use grin_core::ser;
 	use grin_core::ser::ProtocolVersion;
 
-	use grin_onion::crypto::dalek::{self, DalekPublicKey};
+	use grin_onion::crypto::dalek::{self, MwixnetServerIdentityKey};
 	use grin_onion::crypto::secp::SecretKey;
 	use grin_onion::onion::Onion;
 
@@ -182,7 +182,7 @@ pub mod test_util {
 				dalek::sign(&self.key, serialized.as_slice()).map_err(MixClientError::Dalek)?;
 
 			sig.verify(
-				&DalekPublicKey::from_secret(&self.key),
+				&MwixnetServerIdentityKey::from_secret(&self.key),
 				serialized.as_slice(),
 			)
 			.unwrap();

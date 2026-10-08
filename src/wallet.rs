@@ -13,7 +13,7 @@ use thiserror::Error;
 
 use grin_onion::crypto::secp;
 use grin_wallet_libwallet::mwixnet::onion as grin_onion;
-use secp256k1zkp::{PublicKey, Secp256k1, SecretKey};
+use grin_util::secp::{PublicKey, Secp256k1, SecretKey};
 
 use crate::http;
 
@@ -192,8 +192,8 @@ pub mod mock {
 	use grin_keychain::BlindingFactor;
 
 	use grin_onion::crypto::secp;
-	use secp256k1zkp::pedersen::Commitment;
-	use secp256k1zkp::Secp256k1;
+	use grin_util::secp::pedersen::Commitment;
+	use grin_util::secp::Secp256k1;
 
 	use super::{Wallet, WalletError};
 

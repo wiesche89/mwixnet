@@ -8,13 +8,12 @@ use grin_wallet_libwallet::mwixnet::{MwixnetServerPublicKey, SwapReq};
 use serde_json::json;
 use tor_rtcompat::PreferredRuntime;
 
-use grin_onion::crypto::dalek::DalekPublicKey;
 use grin_wallet_libwallet::mwixnet::onion as grin_onion;
 use mwixnet::mix_client::MixClientImpl;
 use mwixnet::tor::TorService;
 use mwixnet::{tor, SwapError, SwapServer, SwapStore};
-use secp256k1zkp::SecretKey;
-
+use grin_util::secp::SecretKey;
+use grin_wallet_libwallet::mwixnet::onion::crypto::dalek::MwixnetServerIdentityKey;
 use crate::common::node::IntegrationGrinNode;
 use crate::common::wallet::{GrinWalletManager, IntegrationGrinWallet};
 
@@ -99,7 +98,7 @@ where
 		min_circuit_timeout_ms: mwixnet::config::DEFAULT_MIN_CIRCUIT_TIMEOUT_MS,
 		prev_server: None,
 		next_server: match next_server {
-			Some(s) => Some(DalekPublicKey::from_secret(&s.server_key)),
+			Some(s) => Some(MwixnetServerIdentityKey::from_secret(&s.server_key)),
 			None => None,
 		},
 	};
@@ -118,7 +117,7 @@ where
 			Some(s) => Some(Arc::new(MixClientImpl::new(
 				server_config.clone(),
 				tor_instance.clone(),
-				DalekPublicKey::from_secret(&s.server_key),
+				MwixnetServerIdentityKey::from_secret(&s.server_key),
 			))),
 			None => None,
 		},
@@ -144,7 +143,7 @@ async fn async_new_mix_server<R>(
 	wallets: &mut GrinWalletManager,
 	server_key: &SecretKey,
 	node: &Arc<grin_util::Mutex<IntegrationGrinNode>>,
-	prev_server: DalekPublicKey,
+	prev_server: MwixnetServerIdentityKey,
 	next_server: Option<&IntegrationMixServer<R>>,
 ) -> IntegrationMixServer<R>
 where
@@ -166,7 +165,7 @@ where
 		min_circuit_timeout_ms: mwixnet::config::DEFAULT_MIN_CIRCUIT_TIMEOUT_MS,
 		prev_server: Some(prev_server),
 		next_server: match next_server {
-			Some(s) => Some(DalekPublicKey::from_secret(&s.server_key)),
+			Some(s) => Some(MwixnetServerIdentityKey::from_secret(&s.server_key)),
 			None => None,
 		},
 	};
@@ -183,7 +182,7 @@ where
 			Some(s) => Some(Arc::new(MixClientImpl::new(
 				server_config.clone(),
 				tor_instance.clone(),
-				DalekPublicKey::from_secret(&s.server_key),
+				MwixnetServerIdentityKey::from_secret(&s.server_key),
 			))),
 			None => None,
 		},
@@ -234,17 +233,17 @@ impl Servers {
 				wallets,
 				&server_keys[i + 1],
 				&node,
-				DalekPublicKey::from_secret(&server_keys[i]),
+				MwixnetServerIdentityKey::from_secret(&server_keys[i]),
 				mixers.last(),
 			)
 			.await;
 			println!(
 				"Mixer {}: identity_key={}, prev_server={}, next_server={}",
 				i,
-				DalekPublicKey::from_secret(&server_keys[i + 1]).to_hex(),
-				DalekPublicKey::from_secret(&server_keys[i]).to_hex(),
+				MwixnetServerIdentityKey::from_secret(&server_keys[i + 1]).to_hex(),
+				MwixnetServerIdentityKey::from_secret(&server_keys[i]).to_hex(),
 				match mixers.last() {
-					Some(s) => DalekPublicKey::from_secret(&s.server_key).to_hex(),
+					Some(s) => MwixnetServerIdentityKey::from_secret(&s.server_key).to_hex(),
 					None => "NONE".to_string(),
 				},
 			);
@@ -264,7 +263,7 @@ impl Servers {
 		.await;
 		println!(
 			"Swapper: identity_key={}",
-			DalekPublicKey::from_secret(&server_keys[0]).to_hex()
+			MwixnetServerIdentityKey::from_secret(&server_keys[0]).to_hex()
 		);
 
 		Servers { swapper, mixers }

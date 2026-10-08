@@ -28,7 +28,7 @@ use tor_keymgr::{ArtiNativeKeystore, KeyMgrBuilder, KeystoreSelector};
 use tor_llcrypto::pk::ed25519::ExpandedKeypair;
 use tor_rtcompat::{Runtime, SleepProviderExt, ToplevelBlockOn};
 
-use secp256k1zkp::SecretKey;
+use grin_util::secp::SecretKey;
 
 use crate::config::ServerConfig;
 

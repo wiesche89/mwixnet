@@ -15,7 +15,7 @@ use rpassword;
 use tor_rtcompat::PreferredRuntime;
 
 use grin_onion::crypto;
-use grin_onion::crypto::dalek::DalekPublicKey;
+use grin_onion::crypto::dalek::MwixnetServerIdentityKey;
 use grin_wallet_libwallet::mwixnet::onion as grin_onion;
 use mwixnet::config::{self, ServerConfig};
 use mwixnet::mix_client::{MixClient, MixClientImpl};
@@ -107,10 +107,10 @@ fn real_main() -> Result<(), Box<dyn std::error::Error>> {
 	let no_fee_collection = args.is_present("no_fee_collection");
 	let prev_server = args
 		.value_of("prev_server")
-		.map(|p| DalekPublicKey::from_hex(&p).unwrap());
+		.map(|p| MwixnetServerIdentityKey::from_hex(&p).unwrap());
 	let next_server = args
 		.value_of("next_server")
-		.map(|p| DalekPublicKey::from_hex(&p).unwrap());
+		.map(|p| MwixnetServerIdentityKey::from_hex(&p).unwrap());
 
 	// Write a new config file if init-config command is supplied
 	if let ("init-config", Some(_)) = args.subcommand() {

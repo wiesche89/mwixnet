@@ -13,9 +13,9 @@ use ring::{aead, pbkdf2};
 use serde_derive::{Deserialize, Serialize};
 use thiserror::Error;
 
-use grin_onion::crypto::dalek::DalekPublicKey;
 use grin_onion::crypto::secp::SecretKey;
 use grin_wallet_libwallet::mwixnet::{onion as grin_onion, MwixnetServerPublicKey};
+use grin_wallet_libwallet::mwixnet::onion::crypto::dalek::MwixnetServerIdentityKey;
 
 const GRIN_HOME: &str = ".grin";
 const NODE_FOREIGN_API_SECRET_FILE_NAME: &str = ".foreign_api_secret";
@@ -55,10 +55,10 @@ pub struct ServerConfig {
 	pub min_circuit_timeout_ms: i32,
 	/// Ed25519 identity key of the previous mix/swap server (e.g. N_1 if this is N_2)
 	#[serde(with = "grin_onion::crypto::dalek::option_dalek_pubkey_serde", default)]
-	pub prev_server: Option<DalekPublicKey>,
+	pub prev_server: Option<MwixnetServerIdentityKey>,
 	/// Ed25519 identity key of the next mix server
 	#[serde(with = "grin_onion::crypto::dalek::option_dalek_pubkey_serde", default)]
-	pub next_server: Option<DalekPublicKey>,
+	pub next_server: Option<MwixnetServerIdentityKey>,
 }
 
 impl ServerConfig {
@@ -66,8 +66,8 @@ impl ServerConfig {
 		OnionV3Address::from_private(&self.key.0).unwrap()
 	}
 
-	pub fn server_pubkey(&self) -> DalekPublicKey {
-		DalekPublicKey::from_secret(&self.key)
+	pub fn server_pubkey(&self) -> MwixnetServerIdentityKey {
+		MwixnetServerIdentityKey::from_secret(&self.key)
 	}
 
 	pub fn onion_pubkey(&self) -> MwixnetServerPublicKey {
@@ -185,7 +185,7 @@ impl EncryptedServerKey {
 			encrypted_seed.pop();
 		}
 
-		let secp = secp256k1zkp::Secp256k1::new();
+		let secp = grin_util::secp::Secp256k1::new();
 		let decrypted = SecretKey::from_slice(&secp, &encrypted_seed)
 			.map_err(|_| ConfigError::InvalidServerKey)?;
 		Ok(decrypted)
@@ -208,9 +208,9 @@ struct RawConfig {
 	#[serde(default = "default_min_circuit_timeout_ms")]
 	min_circuit_timeout_ms: i32,
 	#[serde(with = "grin_onion::crypto::dalek::option_dalek_pubkey_serde", default)]
-	prev_server: Option<DalekPublicKey>,
+	prev_server: Option<MwixnetServerIdentityKey>,
 	#[serde(with = "grin_onion::crypto::dalek::option_dalek_pubkey_serde", default)]
-	next_server: Option<DalekPublicKey>,
+	next_server: Option<MwixnetServerIdentityKey>,
 }
 
 fn config_comment(key: &str) -> Option<&'static str> {
@@ -364,15 +364,15 @@ pub mod test_util {
 	use super::grin_onion;
 	use std::net::TcpListener;
 
-	use grin_onion::crypto::dalek::DalekPublicKey;
-	use secp256k1zkp::SecretKey;
+	use grin_onion::crypto::dalek::MwixnetServerIdentityKey;
+	use grin_util::secp::SecretKey;
 
 	use crate::config::{ServerConfig, DEFAULT_MIN_CIRCUIT_TIMEOUT_MS};
 
 	pub fn local_config(
 		server_key: &SecretKey,
-		prev_server: &Option<DalekPublicKey>,
-		next_server: &Option<DalekPublicKey>,
+		prev_server: &Option<MwixnetServerIdentityKey>,
+		next_server: &Option<MwixnetServerIdentityKey>,
 	) -> Result<ServerConfig, Box<dyn std::error::Error>> {
 		let config = ServerConfig {
 			key: server_key.clone(),

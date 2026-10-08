@@ -13,8 +13,8 @@ use thiserror::Error;
 use grin_onion::crypto::dalek::{self, DalekSignature};
 use grin_onion::onion::{Onion, OnionError, PeeledOnion};
 use grin_wallet_libwallet::mwixnet::onion as grin_onion;
-use secp256k1zkp::key::ZERO_KEY;
-use secp256k1zkp::Secp256k1;
+use grin_util::secp::key::ZERO_KEY;
+use grin_util::secp::Secp256k1;
 
 use crate::config::ServerConfig;
 use crate::mix_client::MixClient;
@@ -306,12 +306,10 @@ impl MixServer for MixServerImpl {
 
 #[cfg(test)]
 mod test_util {
-	use super::grin_onion;
 	use std::sync::Arc;
 
-	use grin_onion::crypto::dalek::DalekPublicKey;
-	use secp256k1zkp::SecretKey;
-
+	use grin_util::secp::SecretKey;
+	use grin_wallet_libwallet::mwixnet::onion::crypto::dalek::MwixnetServerIdentityKey;
 	use crate::config;
 	use crate::mix_client::test_util::DirectMixClient;
 	use crate::mix_client::MixClient;
@@ -321,8 +319,8 @@ mod test_util {
 
 	pub fn new_mixer(
 		server_key: &SecretKey,
-		prev_server: (&SecretKey, &DalekPublicKey),
-		next_server: &Option<(DalekPublicKey, Arc<dyn MixClient>)>,
+		prev_server: (&SecretKey, &MwixnetServerIdentityKey),
+		next_server: &Option<(MwixnetServerIdentityKey, Arc<dyn MixClient>)>,
 		node: &Arc<MockGrinNode>,
 	) -> (Arc<DirectMixClient>, Arc<MockWallet>) {
 		let config = config::test_util::local_config(
@@ -356,13 +354,12 @@ mod tests {
 
 	use ::function_name::named;
 
-	use grin_onion::crypto::dalek::DalekPublicKey;
 	use grin_onion::crypto::secp::{self, Commitment};
 	use grin_onion::test_util as onion_test_util;
 	use grin_onion::{create_onion, new_hop, Hop};
-	use secp256k1zkp::pedersen::RangeProof;
-	use secp256k1zkp::SecretKey;
-
+	use grin_util::secp::pedersen::RangeProof;
+	use grin_util::secp::SecretKey;
+	use grin_wallet_libwallet::mwixnet::onion::crypto::dalek::MwixnetServerIdentityKey;
 	use crate::mix_client::MixClient;
 	use crate::node::mock::MockGrinNode;
 
@@ -380,7 +377,7 @@ mod tests {
 	struct ServerVars {
 		fee: u32,
 		sk: SecretKey,
-		pk: DalekPublicKey,
+		pk: MwixnetServerIdentityKey,
 		excess: SecretKey,
 	}
 

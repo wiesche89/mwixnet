@@ -7,7 +7,7 @@ use grin_core::core::{Committed, Input, Output, OutputFeatures, Transaction, Tra
 use grin_core::global::DEFAULT_ACCEPT_FEE_BASE;
 use grin_util::ToHex;
 use itertools::Itertools;
-use secp256k1zkp::key::ZERO_KEY;
+use grin_util::secp::key::ZERO_KEY;
 use thiserror::Error;
 
 use grin_onion::crypto::comsig::ComSignature;
@@ -305,7 +305,7 @@ impl SwapServer for SwapServerImpl {
 
 		// Verify the rangeproof
 		if let Some(r) = peeled.payload.rangeproof {
-			let secp = Secp256k1::with_caps(secp256k1zkp::ContextFlag::Commit);
+			let secp = Secp256k1::with_caps(grin_util::secp::ContextFlag::Commit);
 			secp.verify_bullet_proof(peeled.onion.commit, r, None)
 				.map_err(|_| SwapError::InvalidRangeproof)?;
 		} else if peeled.onion.enc_payloads.is_empty() {
@@ -463,9 +463,8 @@ pub mod test_util {
 	use super::grin_onion;
 	use std::sync::Arc;
 
-	use grin_onion::crypto::dalek::DalekPublicKey;
 	use grin_onion::crypto::secp::SecretKey;
-
+	use grin_wallet_libwallet::mwixnet::onion::crypto::dalek::MwixnetServerIdentityKey;
 	use crate::config;
 	use crate::mix_client::MixClient;
 	use crate::node::GrinNode;
@@ -476,7 +475,7 @@ pub mod test_util {
 	pub fn new_swapper(
 		test_dir: &str,
 		server_key: &SecretKey,
-		next_server: Option<(&DalekPublicKey, &Arc<dyn MixClient>)>,
+		next_server: Option<(&MwixnetServerIdentityKey, &Arc<dyn MixClient>)>,
 		node: Arc<dyn GrinNode>,
 	) -> (Arc<SwapServerImpl>, Arc<MockWallet>) {
 		let config =
@@ -506,7 +505,7 @@ mod tests {
 	use grin_core::core::{
 		Committed, Input, Inputs, Output, OutputFeatures, Transaction, Weighting,
 	};
-	use secp256k1zkp::key::ZERO_KEY;
+	use grin_util::secp::key::ZERO_KEY;
 	use x25519_dalek::PublicKey as xPublicKey;
 
 	use grin_onion::crypto::comsig::ComSignature;

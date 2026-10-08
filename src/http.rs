@@ -9,7 +9,7 @@ use hyper_legacy::Request;
 use serde_json::json;
 use thiserror::Error;
 
-use secp256k1zkp::SecretKey;
+use grin_util::secp::SecretKey;
 
 /// Error types for HTTP client connections
 #[derive(Error, Debug)]
