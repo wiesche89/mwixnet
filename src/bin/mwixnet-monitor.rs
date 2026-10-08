@@ -16,7 +16,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use arti_client::{config::TorClientConfigBuilder, TorClient};
-use clap::{App, Arg};
+use clap::{load_yaml, App, Error, ErrorKind};
 use futures::future::join_all;
 use mwixnet::tor::async_post;
 use serde_json::{json, Value};
@@ -44,32 +44,14 @@ fn healthy(body: &str) -> bool {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-	let args = App::new("mwixnet-monitor")
-		.about("Check onion health every two minutes")
-		.arg(
-			Arg::with_name("data-dir")
-				.long("data-dir")
-				.takes_value(true)
-				.required(true),
-		)
-		.arg(
-			Arg::with_name("once")
-				.long("once")
-				.help("Check once and exit"),
-		)
-		.arg(
-			Arg::with_name("target")
-				.value_name("NAME=ADDRESS.onion")
-				.multiple(true)
-				.required(true)
-				.validator(|v| target(&v).map(|_| ())),
-		)
-		.get_matches();
+	let yml = load_yaml!("mwixnet-monitor.yml");
+	let args = App::from_yaml(yml).get_matches();
 	let targets: Vec<_> = args
 		.values_of("target")
 		.unwrap()
-		.map(|v| target(v).unwrap())
-		.collect();
+		.map(|value| target(value).map_err(|error| format!("Invalid target '{value}': {error}")))
+		.collect::<Result<_, _>>()
+		.unwrap_or_else(|error| Error::with_description(&error, ErrorKind::ValueValidation).exit());
 	let data_dir = PathBuf::from(args.value_of("data-dir").unwrap());
 	let mut config =
 		TorClientConfigBuilder::from_directories(data_dir.join("state"), data_dir.join("cache"));

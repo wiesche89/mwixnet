@@ -40,6 +40,7 @@ cargo run --release --bin mwixnet-monitor -- \
 
 Use a separate data directory from the servers
 Add `--once` to check once and exit — a failed check returns a nonzero exit code
+See `--help` for all arguments.
 
 #### Wallet workflow
 
