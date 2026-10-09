@@ -26,6 +26,9 @@ pub trait GrinNode: Send + Sync {
 	/// Gets the height and hash of the chain tip
 	async fn async_get_chain_tip(&self) -> Result<(u64, Hash), NodeError>;
 
+	/// Gets the active block hash at a height
+	async fn async_get_header_hash(&self, height: u64) -> Result<Hash, NodeError>;
+
 	/// Posts a transaction to the grin node
 	async fn async_post_tx(&self, tx: &Transaction) -> Result<(), NodeError>;
 
@@ -212,6 +215,15 @@ impl GrinNode for HttpGrinNode {
 		))
 	}
 
+	async fn async_get_header_hash(&self, height: u64) -> Result<Hash, NodeError> {
+		let params = json!([height, null, null]);
+		let header: grin_api::BlockHeaderPrintable =
+			self.async_send_request("get_header", &params).await?;
+		Hash::from_hex(&header.hash).map_err(|error| {
+			NodeError::ApiCommError(grin_api::Error::ResponseError(error.to_string()))
+		})
+	}
+
 	async fn async_post_tx(&self, tx: &Transaction) -> Result<(), NodeError> {
 		let params = json!([tx, true]);
 		self.async_send_request::<serde_json::Value>("push_transaction", &params)
@@ -256,6 +268,9 @@ pub mod mock {
 		utxos: HashMap<Commitment, OutputPrintable>,
 		txns_posted: RwLock<Vec<Transaction>>,
 		kernels: HashMap<Commitment, LocatedTxKernel>,
+		pub tip: (u64, Hash),
+		pub headers: HashMap<u64, Hash>,
+		pub kernel_lookups: RwLock<usize>,
 	}
 
 	impl MockGrinNode {
@@ -264,15 +279,14 @@ pub mod mock {
 				utxos: HashMap::new(),
 				txns_posted: RwLock::new(Vec::new()),
 				kernels: HashMap::new(),
+				tip: (100, Hash::default()),
+				headers: HashMap::new(),
+				kernel_lookups: RwLock::new(0),
 			}
 		}
 
 		pub fn new_with_utxos(utxos: &Vec<&Commitment>) -> Self {
-			let mut node = MockGrinNode {
-				utxos: HashMap::new(),
-				txns_posted: RwLock::new(Vec::new()),
-				kernels: HashMap::new(),
-			};
+			let mut node = Self::new();
 			for utxo in utxos {
 				node.add_default_utxo(utxo);
 			}
@@ -304,6 +318,8 @@ pub mod mock {
 		}
 
 		pub fn add_kernel(&mut self, kernel: &LocatedTxKernel) {
+			self.tip.0 = self.tip.0.max(kernel.height);
+			self.headers.entry(kernel.height).or_default();
 			self.kernels
 				.insert(kernel.tx_kernel.excess.clone(), kernel.clone());
 		}
@@ -323,7 +339,14 @@ pub mod mock {
 		}
 
 		async fn async_get_chain_tip(&self) -> Result<(u64, Hash), NodeError> {
-			Ok((100, Hash::default()))
+			Ok(self.tip)
+		}
+
+		async fn async_get_header_hash(&self, height: u64) -> Result<Hash, NodeError> {
+			self.headers
+				.get(&height)
+				.copied()
+				.ok_or_else(|| NodeError::ApiCommError(grin_api::Error::NotFound))
 		}
 
 		async fn async_post_tx(&self, tx: &Transaction) -> Result<(), NodeError> {
@@ -338,6 +361,7 @@ pub mod mock {
 			_min_height: Option<u64>,
 			_max_height: Option<u64>,
 		) -> Result<Option<LocatedTxKernel>, NodeError> {
+			*self.kernel_lookups.write().unwrap() += 1;
 			if let Some(kernel) = self.kernels.get(&excess) {
 				return Ok(Some(kernel.clone()));
 			}

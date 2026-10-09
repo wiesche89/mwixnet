@@ -27,10 +27,6 @@ const CONFIG_HEADER: &str = "\
 # Wallet clients use the ordered X25519 onion keys printed at server startup.
 ";
 
-fn default_min_circuit_timeout_ms() -> i32 {
-	DEFAULT_MIN_CIRCUIT_TIMEOUT_MS
-}
-
 /// The decrypted server config to be passed around and used by the rest of the mwixnet code
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct ServerConfig {
@@ -51,7 +47,6 @@ pub struct ServerConfig {
 	/// whether to collect excess hop fees in the server wallet
 	pub collect_fees: bool,
 	/// minimum Tor circuit build timeout in milliseconds
-	#[serde(default = "default_min_circuit_timeout_ms")]
 	pub min_circuit_timeout_ms: i32,
 	/// Ed25519 identity key of the previous mix/swap server (e.g. N_1 if this is N_2)
 	#[serde(with = "grin_onion::crypto::dalek::option_dalek_pubkey_serde", default)]
@@ -205,7 +200,6 @@ struct RawConfig {
 	wallet_owner_url: String,
 	wallet_owner_secret_path: Option<String>,
 	collect_fees: bool,
-	#[serde(default = "default_min_circuit_timeout_ms")]
 	min_circuit_timeout_ms: i32,
 	#[serde(with = "grin_onion::crypto::dalek::option_dalek_pubkey_serde", default)]
 	prev_server: Option<MwixnetServerIdentityKey>,
@@ -451,12 +445,6 @@ mod tests {
 		write_config(&path, &config, &password).unwrap();
 		let contents = std::fs::read_to_string(&path).unwrap();
 		let loaded = load_config(&path, &password).unwrap();
-		std::fs::write(
-			&path,
-			contents.replace("min_circuit_timeout_ms = 2000\n", ""),
-		)
-		.unwrap();
-		let legacy_loaded = load_config(&path, &password).unwrap();
 		std::fs::remove_file(path).unwrap();
 
 		assert!(contents.contains("# Seconds between mixing rounds.\ninterval_s ="));
@@ -474,9 +462,5 @@ mod tests {
 			"# Next server Ed25519 identity key; leave unset for the final hop.\n# next_server ="
 		));
 		assert_eq!(loaded, config);
-		assert_eq!(
-			legacy_loaded.min_circuit_timeout_ms,
-			DEFAULT_MIN_CIRCUIT_TIMEOUT_MS
-		);
 	}
 }

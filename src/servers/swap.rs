@@ -237,6 +237,7 @@ impl SwapServerImpl {
 		store.save_swap_tx(&SwapTx {
 			tx: tx.clone(),
 			chain_tip,
+			confirmation: None,
 		})?;
 
 		// Update status to in process
@@ -394,14 +395,30 @@ impl SwapServer for SwapServerImpl {
 	) -> Result<Option<Arc<Transaction>>, SwapError> {
 		let excess = tx.kernels().first().unwrap().excess;
 		let locked_store = self.store.lock().await;
-		if let Ok(swap_tx) = locked_store.get_swap_tx(&excess) {
+		if let Ok(mut swap_tx) = locked_store.get_swap_tx(&excess) {
+			let tip = self.node.async_get_chain_tip().await?;
+			if let Some((height, hash)) = swap_tx.confirmation {
+				if height <= tip.0 && self.node.async_get_header_hash(height).await? == hash {
+					return Ok(Some(tx.clone()));
+				}
+				swap_tx.confirmation = None;
+				locked_store.save_swap_tx(&swap_tx)?;
+			}
+
 			// If kernel is in active chain, return tx
-			if self
+			if let Some(kernel) = self
 				.node
-				.async_get_kernel(&excess, Some(swap_tx.chain_tip.0), None)
+				.async_get_kernel(&excess, Some(swap_tx.chain_tip.0), Some(tip.0))
 				.await?
-				.is_some()
 			{
+				let hash = self.node.async_get_header_hash(kernel.height).await?;
+				// Cache only when both chains agree and the tip is unchanged
+				if self.node.async_get_header_hash(tip.0).await? == tip.1
+					&& self.node.async_get_chain_tip().await? == tip
+				{
+					swap_tx.confirmation = Some((kernel.height, hash));
+					locked_store.save_swap_tx(&swap_tx)?;
+				}
 				return Ok(Some(tx.clone()));
 			}
 
@@ -721,6 +738,54 @@ mod tests {
 				}
 			}
 		}
+		Ok(())
+	}
+
+	#[tokio::test]
+	#[named]
+	async fn confirmed() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+		let dir = init_test!();
+		let key = secp::random_secret(false);
+		let tx = saved_round(dir, &key).await?;
+		let excess = tx.kernels()[0].excess;
+		let hash = onion_test_util::rand_hash();
+		let mut node = MockGrinNode::new();
+		node.add_kernel(&grin_api::LocatedTxKernel {
+			tx_kernel: tx.kernels()[0].clone(),
+			height: 101,
+			mmr_index: 1,
+		});
+		node.headers.insert(101, hash);
+		let mut node = Arc::new(node);
+		// Headers alone do not confirm a transaction
+		{
+			let (server, _) = super::test_util::new_swapper(dir, &key, None, node.clone());
+			server.check_pending().await?;
+			assert_eq!(
+				server.store.lock().await.get_swap_tx(&excess)?.confirmation,
+				None
+			);
+		}
+		Arc::get_mut(&mut node).unwrap().tip.1 = hash;
+		for _ in 0..2 {
+			let (server, _) = super::test_util::new_swapper(dir, &key, None, node.clone());
+			server.check_pending().await?;
+			assert_eq!(
+				server.store.lock().await.get_swap_tx(&excess)?.confirmation,
+				Some((101, hash))
+			);
+		}
+		assert_eq!(*node.kernel_lookups.read().unwrap(), 2);
+
+		// Keep the confirmation on lookup errors
+		Arc::get_mut(&mut node).unwrap().headers.clear();
+		let (server, _) = super::test_util::new_swapper(dir, &key, None, node);
+		assert!(server.check_pending().await.is_err());
+		assert_eq!(
+			server.store.lock().await.get_swap_tx(&excess)?.confirmation,
+			Some((101, hash))
+		);
+
 		Ok(())
 	}
 
