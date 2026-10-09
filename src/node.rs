@@ -3,9 +3,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use grin_api::LocatedTxKernel;
 use grin_api::{OutputPrintable, OutputType, Tip};
-use grin_core::consensus::COINBASE_MATURITY;
 use grin_core::core::hash::Hash;
 use grin_core::core::{Committed, Input, OutputFeatures, Transaction};
+use grin_core::global;
 use grin_util::ToHex;
 use serde_json::json;
 use thiserror::Error;
@@ -78,7 +78,8 @@ pub async fn async_is_spendable(
 
 		if is_coinbase {
 			if let Some(block_height) = out.block_height {
-				if block_height + COINBASE_MATURITY < next_block_height {
+				let maturity = global::coinbase_maturity();
+				if next_block_height < maturity || block_height > next_block_height - maturity {
 					return Ok(false);
 				}
 			} else {
@@ -348,7 +349,52 @@ pub mod mock {
 
 #[cfg(test)]
 mod tests {
-	use super::HttpGrinNode;
+	use super::{async_is_spendable, mock::MockGrinNode, GrinNode, HttpGrinNode};
+	use std::sync::Arc;
+
+	use grin_api::{OutputPrintable, OutputType};
+	use grin_core::global::{self, ChainTypes};
+	use grin_util::secp::pedersen::Commitment;
+
+	#[tokio::test]
+	async fn coinbase_maturity() {
+		for chain_type in [
+			ChainTypes::Mainnet,
+			ChainTypes::Testnet,
+			ChainTypes::AutomatedTesting,
+		] {
+			global::set_local_chain_type(chain_type);
+			let maturity = global::coinbase_maturity();
+			let commit = Commitment::from_vec(vec![0; 33]);
+			let mut mock = MockGrinNode::new();
+			mock.add_utxo(
+				&commit,
+				&OutputPrintable {
+					output_type: OutputType::Coinbase,
+					commit,
+					spent: false,
+					proof: None,
+					proof_hash: String::new(),
+					block_height: Some(10),
+					merkle_proof: None,
+					mmr_index: 0,
+				},
+			);
+			let node: Arc<dyn GrinNode> = Arc::new(mock);
+			for (height, expected) in [
+				(0, false),
+				(10 + maturity - 1, false),
+				(10 + maturity, true),
+				(10 + maturity + 1, true),
+			] {
+				assert_eq!(
+					async_is_spendable(&node, &commit, height).await.unwrap(),
+					expected,
+					"chain {chain_type:?}, height {height}"
+				);
+			}
+		}
+	}
 
 	#[test]
 	fn node_url_supports_http_and_https() {
