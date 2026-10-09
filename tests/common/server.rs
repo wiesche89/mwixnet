@@ -21,7 +21,7 @@ pub struct IntegrationSwapServer<R: tor_rtcompat::Runtime> {
 	onion_pubkey: MwixnetServerPublicKey,
 	tor_instance: Arc<grin_util::Mutex<TorService<R>>>,
 	swap_server: Arc<tokio::sync::Mutex<dyn SwapServer>>,
-	rpc_server: jsonrpc_http_server::Server,
+	rpc_server: mwixnet::servers::rpc::RpcServer,
 	_wallet: Arc<grin_util::Mutex<IntegrationGrinWallet>>,
 }
 
@@ -65,7 +65,7 @@ pub struct IntegrationMixServer<R: tor_rtcompat::Runtime> {
 	server_key: SecretKey,
 	onion_pubkey: MwixnetServerPublicKey,
 	tor_instance: Arc<grin_util::Mutex<TorService<R>>>,
-	rpc_server: jsonrpc_http_server::Server,
+	rpc_server: mwixnet::servers::rpc::RpcServer,
 	_wallet: Arc<grin_util::Mutex<IntegrationGrinWallet>>,
 }
 
@@ -278,7 +278,7 @@ impl Servers {
 	}
 
 	pub fn stop_all(&mut self) {
-		self.swapper.rpc_server.close_handle().close();
+		let _ = self.swapper.rpc_server.close_handle().try_send(());
 		self.swapper
 			.tor_instance
 			.lock()
@@ -286,7 +286,7 @@ impl Servers {
 			.expect("stop swap Tor service");
 
 		self.mixers.iter_mut().for_each(|mixer| {
-			mixer.rpc_server.close_handle().close();
+			let _ = mixer.rpc_server.close_handle().try_send(());
 			mixer
 				.tor_instance
 				.lock()

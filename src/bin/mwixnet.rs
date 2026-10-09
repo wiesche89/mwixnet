@@ -335,7 +335,7 @@ fn real_main() -> Result<(), Box<dyn std::error::Error>> {
 		let close_handle = http_server.close_handle();
 		let round_handle = spawn(move || loop {
 			if stop_state.is_stopped() {
-				close_handle.close();
+				let _ = close_handle.try_send(());
 				break;
 			}
 
@@ -384,7 +384,7 @@ fn real_main() -> Result<(), Box<dyn std::error::Error>> {
 
 			loop {
 				if stop_state.is_stopped() {
-					close_handle.close();
+					let _ = close_handle.try_send(());
 					break;
 				}
 

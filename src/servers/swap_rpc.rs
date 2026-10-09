@@ -3,13 +3,13 @@ use std::sync::Arc;
 use futures::FutureExt;
 use jsonrpc_core::{BoxFuture, Value};
 use jsonrpc_derive::rpc;
-use jsonrpc_http_server::{DomainsValidation, ServerBuilder};
 
 pub use grin_wallet_libwallet::mwixnet::SwapReq;
 
 use crate::config::ServerConfig;
 use crate::mix_client::MixClient;
 use crate::node::GrinNode;
+use crate::servers::rpc::RpcServer;
 use crate::servers::swap::{SwapError, SwapServer, SwapServerImpl};
 use crate::store::SwapStore;
 use crate::wallet::Wallet;
@@ -31,22 +31,11 @@ struct RPCSwapServer {
 
 impl RPCSwapServer {
 	/// Spin up an instance of the JSON-RPC HTTP server.
-	fn start_http(&self, runtime_handle: tokio::runtime::Handle) -> jsonrpc_http_server::Server {
+	fn start_http(&self, runtime: tokio::runtime::Handle) -> Result<RpcServer, grin_api::Error> {
 		let mut io = jsonrpc_core::IoHandler::new();
 		io.extend_with(RPCSwapServer::to_delegate(self.clone()));
 
-		ServerBuilder::new(io)
-			.event_loop_executor(runtime_handle)
-			.cors(DomainsValidation::Disabled)
-			.request_middleware(|request: hyper_legacy::Request<hyper_legacy::Body>| {
-				if request.uri() == "/v1" {
-					request.into()
-				} else {
-					jsonrpc_http_server::Response::bad_request("Only v1 supported").into()
-				}
-			})
-			.start_http(&self.server_config.addr)
-			.expect("Unable to start RPC server")
+		RpcServer::start(self.server_config.addr, io, runtime)
 	}
 }
 
@@ -87,10 +76,7 @@ pub fn listen(
 	node: Arc<dyn GrinNode>,
 	store: SwapStore,
 ) -> std::result::Result<
-	(
-		Arc<tokio::sync::Mutex<dyn SwapServer>>,
-		jsonrpc_http_server::Server,
-	),
+	(Arc<tokio::sync::Mutex<dyn SwapServer>>, RpcServer),
 	Box<dyn std::error::Error>,
 > {
 	let server = SwapServerImpl::new(
@@ -107,7 +93,7 @@ pub fn listen(
 		server: server.clone(),
 	};
 
-	let http_server = rpc_server.start_http(rt_handle.clone());
+	let http_server = rpc_server.start_http(rt_handle.clone())?;
 
 	Ok((server, http_server))
 }
@@ -117,8 +103,11 @@ mod tests {
 	use std::net::TcpListener;
 	use std::sync::Arc;
 
+	use bytes::Bytes;
 	use grin_wallet_libwallet::mwixnet::onion as grin_onion;
-	use hyper_legacy::{Body, Client, Request, Response};
+	use http_body_util::{BodyExt, Full};
+	use hyper::{body::Incoming, Request, Response};
+	use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 	use tokio::sync::Mutex;
 
 	use grin_onion::create_onion;
@@ -130,8 +119,8 @@ mod tests {
 	use crate::servers::swap::{SwapError, SwapServer};
 	use crate::servers::swap_rpc::{RPCSwapServer, SwapReq};
 
-	async fn body_to_string(req: Response<Body>) -> String {
-		let body_bytes = hyper_legacy::body::to_bytes(req.into_body()).await.unwrap();
+	async fn body_to_string(req: Response<Incoming>) -> String {
+		let body_bytes = req.into_body().collect().await.unwrap().to_bytes();
 		String::from_utf8(body_bytes.to_vec()).unwrap()
 	}
 
@@ -161,16 +150,19 @@ mod tests {
 		};
 
 		// Start the JSON-RPC server
-		let http_server = rpc_server.start_http(runtime_handle.clone());
+		let http_server = rpc_server.start_http(runtime_handle.clone())?;
 
 		let uri = format!("http://{}/v1", server_config.addr);
 
 		let request = Request::post(uri)
 			.header("Content-Type", "application/json")
-			.body(Body::from(req))
+			.body(Full::new(Bytes::from(req)))
 			.unwrap();
 
-		let response = Client::new().request(request).await?;
+		let response = Client::builder(TokioExecutor::new())
+			.build_http()
+			.request(request)
+			.await?;
 
 		let response_str: String = body_to_string(response).await;
 
@@ -178,7 +170,7 @@ mod tests {
 		server.lock().await.execute_round().await?;
 
 		// Stop the server
-		http_server.close();
+		drop(http_server);
 
 		Ok(response_str)
 	}
