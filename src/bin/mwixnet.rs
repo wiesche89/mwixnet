@@ -378,9 +378,20 @@ fn real_main() -> Result<(), Box<dyn std::error::Error>> {
 			let mut reorg_secs = 0u32;
 			let mut reorg_window = rng.gen_range(900u32, 3600u32);
 			let server = swap_server.clone();
-			if let Err(error) = rt.block_on(async { server.lock().await.check_pending().await }) {
-				log::error!("Pending swap check failed: {}", error);
-			}
+			rt.block_on(async {
+				tokio::select! {
+					result = async { server.lock().await.check_pending().await } => {
+						if let Err(error) = result {
+							log::error!("Pending swap check failed: {}", error);
+						}
+					}
+					_ = async {
+						while !stop_state.is_stopped() {
+							tokio::time::sleep(Duration::from_millis(100)).await;
+						}
+					} => {}
+				}
+			});
 
 			loop {
 				if stop_state.is_stopped() {
