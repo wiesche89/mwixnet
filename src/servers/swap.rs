@@ -340,9 +340,7 @@ impl SwapServer for SwapServerImpl {
 				_ => SwapError::StoreError(e),
 			})?;
 		println!(
-			"Swap request accepted: input {}, output {}, fee {} nanogrin, {} remaining hop(s)",
-			onion.commit.to_hex(),
-			output_commit.to_hex(),
+			"Swap request accepted: fee {} nanogrin, {} remaining hop(s)",
 			fee,
 			remaining_hops
 		);
