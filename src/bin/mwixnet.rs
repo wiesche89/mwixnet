@@ -2,7 +2,7 @@
 extern crate clap;
 
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::thread::{sleep, spawn};
 use std::time::Duration;
 
@@ -377,8 +377,10 @@ fn real_main() -> Result<(), Box<dyn std::error::Error>> {
 			let mut secs = 0u32;
 			let mut reorg_secs = 0u32;
 			let mut reorg_window = rng.gen_range(900u32, 3600u32);
-			let prev_tx = Arc::new(Mutex::new(None));
 			let server = swap_server.clone();
+			if let Err(error) = rt.block_on(async { server.lock().await.check_pending().await }) {
+				log::error!("Pending swap check failed: {}", error);
+			}
 
 			loop {
 				if stop_state.is_stopped() {
@@ -394,28 +396,18 @@ fn real_main() -> Result<(), Box<dyn std::error::Error>> {
 				}
 
 				if run_round || check_reorg {
-					let prev_tx_clone = prev_tx.clone();
 					let server_clone = server.clone();
 					rt.spawn(async move {
+						let server = server_clone.lock().await;
 						if check_reorg {
-							let tx = prev_tx_clone.lock().unwrap().clone();
-							if let Some(tx) = tx {
-								let result = server_clone.lock().await.check_reorg(&tx).await;
-								let mut prev_tx = prev_tx_clone.lock().unwrap();
-								*prev_tx = match result {
-									Ok(Some(tx)) => Some(tx),
-									_ => None,
-								};
+							if let Err(error) = server.check_pending().await {
+								log::error!("Pending swap check failed: {}", error);
 							}
 						}
 
 						if run_round {
-							match server_clone.lock().await.execute_round().await {
-								Ok(Some(tx)) => {
-									*prev_tx_clone.lock().unwrap() = Some(tx);
-								}
-								Ok(None) => {}
-								Err(e) => log::error!("Swap round failed: {}", e),
+							if let Err(error) = server.execute_round().await {
+								log::error!("Swap round failed: {}", error);
 							}
 						}
 					});

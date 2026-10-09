@@ -83,6 +83,9 @@ pub trait SwapServer: Send + Sync {
 	/// and assemble the coinswap transaction, posting the transaction to the configured node.
 	async fn execute_round(&self) -> Result<Option<Arc<Transaction>>, SwapError>;
 
+	/// Check pending transactions from the store
+	async fn check_pending(&self) -> Result<(), SwapError>;
+
 	/// Verify the previous swap transaction is in the active chain or mempool.
 	/// If it's not, rebroacast the transaction if it's still valid.
 	/// If the transaction is no longer valid, perform the swap again.
@@ -364,6 +367,29 @@ impl SwapServer for SwapServerImpl {
 		self.async_execute_round(&locked_store, spendable).await
 	}
 
+	async fn check_pending(&self) -> Result<(), SwapError> {
+		let swaps = self.store.lock().await.swaps_iter()?;
+		let kernels: HashSet<_> = swaps
+			.filter_map(|swap| match swap.status {
+				SwapStatus::InProcess { kernel_commit } => Some(kernel_commit),
+				_ => None,
+			})
+			.collect();
+
+		let mut first_error = None;
+		for kernel in kernels {
+			let stored = self.store.lock().await.get_swap_tx(&kernel);
+			let result = match stored {
+				Ok(stored) => self.check_reorg(&Arc::new(stored.tx)).await.map(|_| ()),
+				Err(error) => Err(SwapError::StoreError(error)),
+			};
+			if let Err(error) = result {
+				first_error.get_or_insert(error);
+			}
+		}
+		first_error.map_or(Ok(()), Err)
+	}
+
 	async fn check_reorg(
 		&self,
 		tx: &Arc<Transaction>,
@@ -391,7 +417,15 @@ impl SwapServer for SwapServerImpl {
 			let next_block_height = self.node.async_get_chain_tip().await?.0 + 1;
 			let mut swaps = Vec::new();
 			for input_commit in &tx.inputs_committed() {
-				if let Ok(swap) = locked_store.get_swap(&input_commit) {
+				if let Ok(mut swap) = locked_store.get_swap(&input_commit) {
+					if swap.status
+						!= (SwapStatus::InProcess {
+							kernel_commit: excess,
+						}) {
+						continue;
+					}
+					// Allow surviving inputs into a new round
+					swap.status = SwapStatus::Unprocessed;
 					if self.async_is_spendable(next_block_height, &swap).await {
 						swaps.push(swap);
 					}
@@ -447,6 +481,10 @@ pub mod mock {
 
 		async fn execute_round(&self) -> Result<Option<Arc<Transaction>>, SwapError> {
 			Ok(None)
+		}
+
+		async fn check_pending(&self) -> Result<(), SwapError> {
+			Ok(())
 		}
 
 		async fn check_reorg(
@@ -612,6 +650,116 @@ mod tests {
 
 		posted_txn.validate(Weighting::AsTransaction)?;
 
+		Ok(())
+	}
+
+	async fn saved_round(
+		dir: &str,
+		key: &secp::SecretKey,
+	) -> Result<Arc<Transaction>, Box<dyn std::error::Error + Send + Sync>> {
+		let mut node = MockGrinNode::new();
+		let mut requests = Vec::new();
+		for _ in 0..2 {
+			let value = 200_000_000;
+			let fee = 50_000_000;
+			let blind = secp::random_secret(false);
+			let commit = secp::commit(value, &blind)?;
+			let excess = secp::random_secret(false);
+			let (_, proof) = onion_test_util::proof(value, fee, &blind, &vec![&excess]);
+			let hop = new_hop(key, &excess, fee, Some(proof));
+			let onion = create_onion(&commit, &vec![hop], false)?;
+			let signature = ComSignature::sign(value, &blind, &onion.serialize()?, false)?;
+			node.add_default_utxo(&commit);
+			requests.push((onion, signature));
+		}
+		let (server, _) = super::test_util::new_swapper(dir, key, None, Arc::new(node));
+		for (onion, signature) in requests {
+			server.swap(&onion, &signature).await?;
+		}
+		Ok(server.execute_round().await?.unwrap())
+	}
+
+	#[tokio::test]
+	#[named]
+	async fn restart() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+		let root = init_test!();
+		for (name, unspent, confirmed) in [
+			("pending", 2, false),
+			("partial", 1, false),
+			("spent", 0, false),
+			("confirmed", 0, true),
+		] {
+			let dir = format!("{root}/{name}");
+			let key = secp::random_secret(false);
+			let tx = saved_round(&dir, &key).await?;
+			let mut node = MockGrinNode::new();
+			let inputs = tx.inputs_committed();
+			for input in inputs.iter().take(unspent) {
+				node.add_default_utxo(input);
+			}
+			if confirmed {
+				node.add_kernel(&grin_api::LocatedTxKernel {
+					tx_kernel: tx.kernels()[0].clone(),
+					height: 101,
+					mmr_index: 1,
+				});
+			}
+			let node = Arc::new(node);
+			// Recover from disk on each restart
+			for attempt in 1..=2 {
+				let (server, _) = super::test_util::new_swapper(&dir, &key, None, node.clone());
+				server.check_pending().await?;
+				let posted = node.get_posted_txns();
+				let expected = if unspent > 0 { attempt } else { 0 };
+				assert_eq!(posted.len(), expected, "{name}");
+				if let Some(posted) = posted.last() {
+					posted.validate(Weighting::AsTransaction)?;
+					assert_eq!(posted.inputs_committed(), inputs[..unspent]);
+					if unspent == 2 {
+						assert_eq!(posted.kernels(), tx.kernels());
+						assert_eq!(posted.outputs(), tx.outputs());
+						assert_eq!(posted.offset, tx.offset);
+					}
+				}
+			}
+		}
+		Ok(())
+	}
+
+	#[tokio::test]
+	#[named]
+	async fn pending() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+		let dir = init_test!();
+		let key = secp::random_secret(false);
+		let txs = [saved_round(dir, &key).await?, saved_round(dir, &key).await?];
+		let mut node = MockGrinNode::new();
+		for tx in &txs {
+			for input in tx.inputs_committed() {
+				node.add_default_utxo(&input);
+			}
+		}
+		let node = Arc::new(node);
+		let (server, _) = super::test_util::new_swapper(dir, &key, None, node.clone());
+		server.check_pending().await?;
+		let posted = node.get_posted_txns();
+		assert_eq!(posted.len(), 2);
+		for tx in &txs {
+			assert!(posted.iter().any(|posted| posted.kernels() == tx.kernels()));
+		}
+
+		// Keep checking other transactions after a store error
+		{
+			let store = server.store.lock().await;
+			let mut swap = store.get_swap(&txs[0].inputs_committed()[0])?;
+			swap.status = SwapStatus::InProcess {
+				kernel_commit: onion_test_util::rand_commit(),
+			};
+			store.save_swap(&swap, true)?;
+		}
+		for expected_posts in [4, 6] {
+			assert!(server.check_pending().await.is_err());
+			assert_eq!(node.get_posted_txns().len(), expected_posts);
+		}
 		Ok(())
 	}
 
