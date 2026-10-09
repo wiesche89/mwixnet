@@ -83,7 +83,7 @@ impl IntegrationGrinWallet {
 		)
 		.unwrap();
 
-		lc.create_wallet(None, None, 12, ZeroingString::from("pass"), false)
+		lc.create_wallet(None, None, 16, ZeroingString::from("pass"), false)
 			.unwrap();
 
 		// Start owner API
