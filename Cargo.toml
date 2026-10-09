@@ -44,6 +44,7 @@ tor-keymgr = "0.43.0"
 tor-log-ratelim = "0.43.0"
 tor-rtcompat = { version = "0.43.0", features = ["static"] }
 log = "0.4.20"
+tracing = { version = "0.1", features = ["log"] }
 
 grin_api = { git = "https://github.com/mimblewimble/grin", rev = "1425f603295ba166eccd9e4e0af0226742f90844" }
 grin_core = { git = "https://github.com/mimblewimble/grin", rev = "1425f603295ba166eccd9e4e0af0226742f90844" }
